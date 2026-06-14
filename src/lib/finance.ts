@@ -13,7 +13,7 @@ export type RecurringExpense = { id: string; name: string; amount: number; curre
 export type Income = { source: string; amount: number; currency: Currency; exchangeRate: number; date: string; notes?: string; };
 export type AllocationItem = { id: string; destinationName: string; destinationType: DestinationType; amount: number; currency: Currency; priority: string; reason: string; };
 export type AllocationPlan = { mode: string; inputAmountNgn: number; items: AllocationItem[]; warnings: string[]; recommendations: string[]; };
-export type AppState = { goals: Goal[]; debts: Debt[]; expenses: RecurringExpense[]; incomes: Income[]; lastPlan?: AllocationPlan; };
+export type AppState = { goals: Goal[]; debts: Debt[]; expenses: RecurringExpense[]; incomes: Income[]; lastPlan?: AllocationPlan; appliedPlanSignature?: string; };
 export type ExpenseDecisionInput = { name: string; amount: number; currency: Currency; category: string; exchangeRate: number; date: string; };
 export type ExpenseDecision = { verdict: DecisionVerdict; summary: string; amountNgn: number; goalImpactAmount: number; reasons: string[]; recommendations: string[]; };
 
@@ -133,6 +133,50 @@ export function generateAllocation(state: AppState, income: Income): AllocationP
   }
   recommendations.push('Review the split before spending. The plan is advice; you can still manually adjust it.');
   return { mode, inputAmountNgn: amountNgn, items, warnings, recommendations };
+}
+
+export function applyAllocationPlanToProgress(state: AppState): AppState {
+  if (!state.lastPlan) return state;
+
+  const signature = getAllocationPlanSignature(state.lastPlan);
+  if (state.appliedPlanSignature === signature) return state;
+
+  const goals = state.goals.map((goal) => {
+    const add = state.lastPlan?.items
+      .filter((item) => item.destinationType === 'goal' && item.destinationName === goal.name)
+      .reduce((sum, item) => sum + item.amount, 0) ?? 0;
+    const currentAmount = Math.min(goal.targetAmount, goal.currentAmount + add);
+    return { ...goal, currentAmount, status: currentAmount >= goal.targetAmount ? 'completed' as const : goal.status };
+  });
+
+  const debts = state.debts.map((debt) => {
+    const paid = state.lastPlan?.items
+      .filter((item) => item.destinationType === 'debt' && item.destinationName === debt.name)
+      .reduce((sum, item) => sum + item.amount, 0) ?? 0;
+    const remainingAmount = Math.max(0, debt.remainingAmount - paid);
+    return { ...debt, remainingAmount, status: remainingAmount <= 0 ? 'paid' as const : debt.status };
+  });
+
+  return { ...state, goals, debts, appliedPlanSignature: signature };
+}
+
+export function getAllocationPlanSignature(plan?: AllocationPlan) {
+  if (!plan) return '';
+  return JSON.stringify({
+    inputAmountNgn: plan.inputAmountNgn,
+    mode: plan.mode,
+    progressItems: plan.items
+      .filter((item) => item.destinationType === 'goal' || item.destinationType === 'debt')
+      .map((item) => [item.destinationName, item.destinationType, item.amount]),
+  });
+}
+
+export function getAllocationPlanProgressTotals(plan?: AllocationPlan) {
+  const items = plan?.items ?? [];
+  return {
+    goalTotal: items.filter((item) => item.destinationType === 'goal').reduce((sum, item) => sum + item.amount, 0),
+    debtTotal: items.filter((item) => item.destinationType === 'debt').reduce((sum, item) => sum + item.amount, 0),
+  };
 }
 
 export function checkExpenseDecision(state: AppState, input: ExpenseDecisionInput): ExpenseDecision {

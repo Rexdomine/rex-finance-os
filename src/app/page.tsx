@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { checkExpenseDecision, getMonthlyExpenseAmount, type ExpenseDecision } from '@/lib/finance';
+import { applyAllocationPlanToProgress, checkExpenseDecision, getAllocationPlanProgressTotals, getAllocationPlanSignature, getMonthlyExpenseAmount, type ExpenseDecision } from '@/lib/finance';
 
 type Currency = 'NGN' | 'USD';
 type Priority = 'critical' | 'high' | 'medium' | 'low';
@@ -83,6 +83,7 @@ type AppState = {
   expenses: RecurringExpense[];
   incomes: Income[];
   lastPlan?: AllocationPlan;
+  appliedPlanSignature?: string;
 };
 
 const uid = () => Math.random().toString(36).slice(2, 10);
@@ -296,6 +297,7 @@ export default function Home() {
   const [expenseDraft, setExpenseDraft] = useState({ name: '', amount: '', currency: 'NGN' as Currency, frequency: 'monthly' as RecurringExpense['frequency'], category: 'Essentials', priority: 'important' as ExpensePriority, workCritical: false });
   const [decisionDraft, setDecisionDraft] = useState({ name: 'Sneakers', amount: '120000', currency: 'NGN' as Currency, category: 'Clothing', exchangeRate: '1600' });
   const [expenseDecision, setExpenseDecision] = useState<ExpenseDecision | null>(null);
+  const [applyStatus, setApplyStatus] = useState<string | null>(null);
   const [hasLoadedServerState, setHasLoadedServerState] = useState(false);
   const [syncStatus, setSyncStatus] = useState('Loading finance ledger...');
   const [ledgerMode, setLedgerMode] = useState<'turso-libsql' | 'local-libsql' | null>(null);
@@ -364,27 +366,28 @@ export default function Home() {
     return { activeGoals, activeDebts, goalRemaining, debtRemaining, monthlyExpenses, totalIncome };
   }, [state]);
 
+  const currentPlanSignature = getAllocationPlanSignature(state.lastPlan);
+  const isLastPlanApplied = Boolean(state.lastPlan && state.appliedPlanSignature === currentPlanSignature);
+
   const runAllocation = () => {
     const plan = generateAllocation(state, income);
-    setState((previous) => ({ ...previous, incomes: [income, ...previous.incomes].slice(0, 25), lastPlan: plan }));
+    setState((previous) => ({ ...previous, incomes: [income, ...previous.incomes].slice(0, 25), lastPlan: plan, appliedPlanSignature: undefined }));
+    setApplyStatus(null);
     setActiveTab('dashboard');
   };
 
   const applyLastPlan = () => {
     if (!state.lastPlan) return;
-    setState((previous) => ({
-      ...previous,
-      goals: previous.goals.map((goal) => {
-        const add = previous.lastPlan?.items.filter((item) => item.destinationType === 'goal' && item.destinationName === goal.name).reduce((sum, item) => sum + item.amount, 0) ?? 0;
-        const currentAmount = Math.min(goal.targetAmount, goal.currentAmount + add);
-        return { ...goal, currentAmount, status: currentAmount >= goal.targetAmount ? 'completed' : goal.status };
-      }),
-      debts: previous.debts.map((debt) => {
-        const paid = previous.lastPlan?.items.filter((item) => item.destinationType === 'debt' && item.destinationName === debt.name).reduce((sum, item) => sum + item.amount, 0) ?? 0;
-        const remainingAmount = Math.max(0, debt.remainingAmount - paid);
-        return { ...debt, remainingAmount, status: remainingAmount <= 0 ? 'paid' : debt.status };
-      }),
-    }));
+
+    const currentSignature = getAllocationPlanSignature(state.lastPlan);
+    if (state.appliedPlanSignature === currentSignature) {
+      setApplyStatus('Already applied — this plan will not be counted twice.');
+      return;
+    }
+
+    const { goalTotal, debtTotal } = getAllocationPlanProgressTotals(state.lastPlan);
+    setState((previous) => applyAllocationPlanToProgress(previous));
+    setApplyStatus(`Applied: ${formatMoney(goalTotal)} added to goals and ${formatMoney(debtTotal)} paid down from debts. Saving to Turso...`);
   };
 
   const addGoal = () => {
@@ -503,7 +506,14 @@ export default function Home() {
                     </div>
                     {state.lastPlan.warnings.map((warning) => <p key={warning} className="rounded-xl bg-amber-400/10 p-3 text-sm text-amber-100">⚠ {warning}</p>)}
                     {state.lastPlan.recommendations.map((recommendation) => <p key={recommendation} className="rounded-xl bg-blue-400/10 p-3 text-sm text-blue-100">💡 {recommendation}</p>)}
-                    <button onClick={applyLastPlan} className="w-full rounded-2xl bg-emerald-400 px-4 py-3 font-black text-black hover:bg-emerald-300">Apply plan to goal/debt progress</button>
+                    {applyStatus && <p className="rounded-xl bg-emerald-400/10 p-3 text-sm font-semibold text-emerald-100">✅ {applyStatus}</p>}
+                    <button
+                      onClick={applyLastPlan}
+                      disabled={isLastPlanApplied}
+                      className={`w-full rounded-2xl px-4 py-3 font-black text-black transition ${isLastPlanApplied ? 'cursor-not-allowed bg-emerald-200/60' : 'bg-emerald-400 hover:bg-emerald-300'}`}
+                    >
+                      {isLastPlanApplied ? 'Plan already applied' : 'Apply plan to goal/debt progress'}
+                    </button>
                   </div>
                 ) : <p className="text-white/60">No allocation generated yet. Add income to cook the first split.</p>}
               </Panel>
