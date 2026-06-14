@@ -404,8 +404,8 @@ export default function Home() {
     setState((previous) => deleteAllocationPlan(previous));
     setIsDeletePlanDialogOpen(false);
     setApplyStatus(isLastPlanApplied
-      ? `Allocation plan deleted and reversed: ${formatMoney(goalTotal)} removed from goals and ${formatMoney(debtTotal)} restored to debts. Saving to Turso...`
-      : 'Allocation plan deleted. No goal or debt progress had been applied yet. Saving to Turso...');
+      ? `Allocation plan deleted, income log cleared, and progress reversed: ${formatMoney(goalTotal)} removed from goals and ${formatMoney(debtTotal)} restored to debts. Saving to Turso...`
+      : 'Allocation plan deleted and the linked income log cleared. No goal or debt progress had been applied yet. Saving to Turso...');
   };
 
   const cancelDeleteLastPlan = () => setIsDeletePlanDialogOpen(false);
@@ -661,12 +661,16 @@ export default function Home() {
                 <h3 id="delete-plan-title" className="mt-3 text-2xl font-black text-white">Delete this allocation plan?</h3>
                 <p className="mt-3 text-sm leading-6 text-white/70">
                   {isLastPlanApplied
-                    ? 'This plan has already updated your goals/debts. Deleting it will also reverse the applied Move-Out/debt progress from this exact allocation.'
-                    : 'This plan has not been applied yet. Deleting it will only remove the visible allocation plan.'}
+                    ? 'This plan has already updated your goals/debts. Deleting it will also clear the linked income log and reverse the applied Move-Out/debt progress from this exact allocation.'
+                    : 'This plan has not been applied yet. Deleting it will remove the visible allocation plan and clear the linked income log.'}
                 </p>
               </div>
               <div className="space-y-4 p-6">
-                <div className="grid gap-3 sm:grid-cols-2">
+                <div className="grid gap-3 sm:grid-cols-3">
+                  <div className="rounded-2xl bg-white/5 p-4">
+                    <p className="text-xs uppercase tracking-widest text-white/40">Income log to clear</p>
+                    <p className="mt-2 text-xl font-black text-emerald-100">{formatMoney(state.lastPlan.inputAmountNgn)}</p>
+                  </div>
                   <div className="rounded-2xl bg-white/5 p-4">
                     <p className="text-xs uppercase tracking-widest text-white/40">Goal progress to remove</p>
                     <p className="mt-2 text-xl font-black text-red-100">{formatMoney(isLastPlanApplied ? deletePlanImpact.goalTotal : 0)}</p>

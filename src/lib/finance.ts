@@ -204,7 +204,20 @@ export function deleteAllocationPlan(state: AppState): AppState {
     })
     : state.debts;
 
-  const next = { ...state, goals, debts };
+  let removedLinkedIncome = false;
+  const incomes = state.lastPlan
+    ? state.incomes.filter((income) => {
+      const incomeAmountNgn = Math.round(toNgn(income.amount, income.currency, income.exchangeRate || 1600));
+      const planAmountNgn = Math.round(state.lastPlan?.inputAmountNgn ?? 0);
+      if (!removedLinkedIncome && incomeAmountNgn === planAmountNgn) {
+        removedLinkedIncome = true;
+        return false;
+      }
+      return true;
+    })
+    : state.incomes;
+
+  const next = { ...state, goals, debts, incomes };
   delete next.lastPlan;
   delete next.appliedPlanSignature;
   return next;

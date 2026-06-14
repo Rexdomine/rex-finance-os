@@ -79,19 +79,21 @@ describe('Rex Finance OS finance rules', () => {
 
   it('deletes an applied allocation plan and reverses the goal/debt progress from that plan', () => {
     const state = buildDefaultState();
-    const plan = generateAllocation(state, {
+    const income = {
       source: 'Client payment',
       amount: 2043536,
-      currency: 'NGN',
+      currency: 'NGN' as const,
       exchangeRate: 1600,
       date: '2026-06-14',
-    });
-    const applied = applyAllocationPlanToProgress({ ...state, lastPlan: plan });
+    };
+    const plan = generateAllocation(state, income);
+    const applied = applyAllocationPlanToProgress({ ...state, incomes: [income], lastPlan: plan });
 
     const withoutPlan = deleteAllocationPlan(applied);
 
     assert.equal(withoutPlan.lastPlan, undefined);
     assert.equal(withoutPlan.appliedPlanSignature, undefined);
+    assert.equal(withoutPlan.incomes.length, 0);
     assert.equal(withoutPlan.goals.find((goal) => goal.id === 'move-out')?.currentAmount, state.goals.find((goal) => goal.id === 'move-out')?.currentAmount);
     assert.equal(withoutPlan.debts.find((debt) => debt.id === 'bank-debt')?.remainingAmount, state.debts.find((debt) => debt.id === 'bank-debt')?.remainingAmount);
   });
