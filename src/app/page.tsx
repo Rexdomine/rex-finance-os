@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import { checkExpenseDecision, getMonthlyExpenseAmount, type ExpenseDecision } from '@/lib/finance';
 
 type Currency = 'NGN' | 'USD';
 type Priority = 'critical' | 'high' | 'medium' | 'low';
@@ -144,6 +145,7 @@ const defaultState: AppState = {
   expenses: [
     { id: 'openai', name: 'OpenAI Max', amount: 100, currency: 'USD', frequency: 'monthly', category: 'Work tools', priority: 'must-pay', workCritical: true },
     { id: 'wispr', name: 'Wispr Flow', amount: 12, currency: 'USD', frequency: 'monthly', category: 'Work tools', priority: 'must-pay', workCritical: true },
+    { id: 'vps-hosting', name: 'VPS Hosting', amount: 96, currency: 'USD', frequency: 'yearly', category: 'Work tools', priority: 'must-pay', workCritical: true },
     { id: 'internet', name: 'Internet', amount: 50000, currency: 'NGN', frequency: 'monthly', category: 'Work tools', priority: 'must-pay', workCritical: true },
     { id: 'food', name: 'Food', amount: 120000, currency: 'NGN', frequency: 'monthly', category: 'Essentials', priority: 'must-pay', workCritical: false },
     { id: 'electricity', name: 'Electricity', amount: 50000, currency: 'NGN', frequency: 'monthly', category: 'Essentials', priority: 'must-pay', workCritical: true },
@@ -194,13 +196,13 @@ function generateAllocation(state: AppState, income: Income): AllocationPlan {
   };
 
   const mustPayExpenses = state.expenses.filter((expense) => expense.priority === 'must-pay');
-  const monthlyMustPayNgn = mustPayExpenses.reduce((sum, expense) => sum + toNgn(expense.amount, expense.currency, income.exchangeRate || 1600), 0);
+  const monthlyMustPayNgn = mustPayExpenses.reduce((sum, expense) => sum + getMonthlyExpenseAmount(expense, income.exchangeRate || 1600), 0);
   const expenseCap = mode === 'Survival Mode' ? amountNgn * 0.6 : mode === 'Stability Mode' ? amountNgn * 0.35 : Math.min(monthlyMustPayNgn, amountNgn * 0.32);
   let expensePool = expenseCap;
 
   mustPayExpenses.forEach((expense) => {
     if (expensePool <= 0) return;
-    const desired = toNgn(expense.amount, expense.currency, income.exchangeRate || 1600);
+    const desired = getMonthlyExpenseAmount(expense, income.exchangeRate || 1600);
     const allocation = Math.min(desired, expensePool);
     addItem(expense.name, 'expense', allocation, expense.workCritical ? 'work-critical' : 'must-pay', expense.workCritical ? 'Keeps work and income engine running.' : 'Covers core survival spending.');
     expensePool -= allocation;
@@ -233,7 +235,7 @@ function generateAllocation(state: AppState, income: Income): AllocationPlan {
 
   const importantExpenses = state.expenses.filter((expense) => expense.priority === 'important');
   importantExpenses.forEach((expense) => {
-    addItem(expense.name, 'expense', Math.min(toNgn(expense.amount, expense.currency, income.exchangeRate || 1600), amountNgn * 0.08), 'important cap', 'Useful support category, but capped while critical goals are active.');
+    addItem(expense.name, 'expense', Math.min(getMonthlyExpenseAmount(expense, income.exchangeRate || 1600), amountNgn * 0.08), 'important cap', 'Useful support category, but capped while critical goals are active.');
   });
 
   const lifestyleCap = state.expenses.find((expense) => expense.id === 'lifestyle')?.amount ?? 50000;
@@ -260,17 +262,28 @@ function progress(current: number, target: number) {
   return Math.min(100, Math.round((current / Math.max(target, 1)) * 100));
 }
 
+function migrateState(stored: AppState): AppState {
+  if (stored.expenses.some((expense) => expense.id === 'vps-hosting')) return stored;
+  const wisprIndex = stored.expenses.findIndex((expense) => expense.id === 'wispr');
+  const vps: RecurringExpense = { id: 'vps-hosting', name: 'VPS Hosting', amount: 96, currency: 'USD', frequency: 'yearly', category: 'Work tools', priority: 'must-pay', workCritical: true };
+  const expenses = [...stored.expenses];
+  expenses.splice(wisprIndex >= 0 ? wisprIndex + 1 : 0, 0, vps);
+  return { ...stored, expenses };
+}
+
 export default function Home() {
   const [state, setState] = useState<AppState>(() => {
     if (typeof window === 'undefined') return defaultState;
     const stored = window.localStorage.getItem(STORAGE_KEY);
-    return stored ? JSON.parse(stored) : defaultState;
+    return stored ? migrateState(JSON.parse(stored)) : defaultState;
   });
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'income' | 'goals' | 'debts' | 'expenses'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'income' | 'checker' | 'goals' | 'debts' | 'expenses'>('dashboard');
   const [income, setIncome] = useState<Income>({ source: 'Freelance / Remote work', amount: 850000, currency: 'NGN', exchangeRate: 1600, date: new Date().toISOString().slice(0, 10), notes: '' });
   const [goalDraft, setGoalDraft] = useState({ name: '', targetAmount: '', currentAmount: '0', deadline: '', priority: 'medium' as Priority });
   const [debtDraft, setDebtDraft] = useState({ name: '', totalAmount: '', remainingAmount: '', minimumDueAmount: '', dueDate: '', urgency: 'normal' as Urgency });
-  const [expenseDraft, setExpenseDraft] = useState({ name: '', amount: '', currency: 'NGN' as Currency, category: 'Essentials', priority: 'important' as ExpensePriority, workCritical: false });
+  const [expenseDraft, setExpenseDraft] = useState({ name: '', amount: '', currency: 'NGN' as Currency, frequency: 'monthly' as RecurringExpense['frequency'], category: 'Essentials', priority: 'important' as ExpensePriority, workCritical: false });
+  const [decisionDraft, setDecisionDraft] = useState({ name: 'Sneakers', amount: '120000', currency: 'NGN' as Currency, category: 'Clothing', exchangeRate: '1600' });
+  const [expenseDecision, setExpenseDecision] = useState<ExpenseDecision | null>(null);
 
   useEffect(() => {
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
@@ -281,7 +294,7 @@ export default function Home() {
     const activeDebts = state.debts.filter((debt) => debt.status === 'active');
     const goalRemaining = activeGoals.reduce((sum, goal) => sum + Math.max(0, goal.targetAmount - goal.currentAmount), 0);
     const debtRemaining = activeDebts.reduce((sum, debt) => sum + Math.max(0, debt.remainingAmount), 0);
-    const monthlyExpenses = state.expenses.reduce((sum, expense) => sum + toNgn(expense.amount, expense.currency, 1600), 0);
+    const monthlyExpenses = state.expenses.reduce((sum, expense) => sum + getMonthlyExpenseAmount(expense, 1600), 0);
     const totalIncome = state.incomes.reduce((sum, item) => sum + toNgn(item.amount, item.currency, item.exchangeRate), 0);
     return { activeGoals, activeDebts, goalRemaining, debtRemaining, monthlyExpenses, totalIncome };
   }, [state]);
@@ -331,9 +344,20 @@ export default function Home() {
     if (!expenseDraft.name || !expenseDraft.amount) return;
     setState((previous) => ({
       ...previous,
-      expenses: [...previous.expenses, { id: uid(), name: expenseDraft.name, amount: Number(expenseDraft.amount), currency: expenseDraft.currency, frequency: 'monthly', category: expenseDraft.category, priority: expenseDraft.priority, workCritical: expenseDraft.workCritical }],
+      expenses: [...previous.expenses, { id: uid(), name: expenseDraft.name, amount: Number(expenseDraft.amount), currency: expenseDraft.currency, frequency: expenseDraft.frequency, category: expenseDraft.category, priority: expenseDraft.priority, workCritical: expenseDraft.workCritical }],
     }));
-    setExpenseDraft({ name: '', amount: '', currency: 'NGN', category: 'Essentials', priority: 'important', workCritical: false });
+    setExpenseDraft({ name: '', amount: '', currency: 'NGN', frequency: 'monthly', category: 'Essentials', priority: 'important', workCritical: false });
+  };
+
+  const runExpenseDecision = () => {
+    setExpenseDecision(checkExpenseDecision(state, {
+      name: decisionDraft.name,
+      amount: Number(decisionDraft.amount || 0),
+      currency: decisionDraft.currency,
+      category: decisionDraft.category,
+      exchangeRate: Number(decisionDraft.exchangeRate || 1600),
+      date: new Date().toISOString().slice(0, 10),
+    }));
   };
 
   const resetData = () => setState(defaultState);
@@ -357,7 +381,7 @@ export default function Home() {
         </header>
 
         <nav className="flex flex-wrap gap-2 rounded-2xl border border-white/10 bg-white/5 p-2">
-          {(['dashboard', 'income', 'goals', 'debts', 'expenses'] as const).map((tab) => (
+          {(['dashboard', 'income', 'checker', 'goals', 'debts', 'expenses'] as const).map((tab) => (
             <button key={tab} onClick={() => setActiveTab(tab)} className={`rounded-xl px-4 py-2 text-sm font-bold capitalize transition ${activeTab === tab ? 'bg-emerald-400 text-black' : 'bg-white/5 text-white hover:bg-white/10'}`}>{tab}</button>
           ))}
           <button onClick={resetData} className="ml-auto rounded-xl bg-red-400/10 px-4 py-2 text-sm font-bold text-red-200 hover:bg-red-400/20">Reset demo data</button>
@@ -435,6 +459,47 @@ export default function Home() {
           </Panel>
         )}
 
+        {activeTab === 'checker' && (
+          <Panel title="Expense decision checker">
+            <p className="mb-5 max-w-3xl text-white/60">Test a planned expense before spending. Groot checks it against active goals, debts, work-critical rules, savings/investment discipline, and your Move-Out Attack Mode.</p>
+            <div className="grid gap-4 md:grid-cols-5">
+              <Input label="Expense name" value={decisionDraft.name} onChange={(value) => setDecisionDraft({ ...decisionDraft, name: value })} />
+              <Input label="Amount" type="number" value={decisionDraft.amount} onChange={(value) => setDecisionDraft({ ...decisionDraft, amount: value })} />
+              <Select label="Currency" value={decisionDraft.currency} onChange={(value) => setDecisionDraft({ ...decisionDraft, currency: value as Currency })} options={['NGN', 'USD']} />
+              <Input label="Category" value={decisionDraft.category} onChange={(value) => setDecisionDraft({ ...decisionDraft, category: value })} />
+              <Input label="USD→NGN rate" type="number" value={decisionDraft.exchangeRate} onChange={(value) => setDecisionDraft({ ...decisionDraft, exchangeRate: value })} />
+            </div>
+            <button onClick={runExpenseDecision} className="mt-6 rounded-2xl bg-emerald-400 px-6 py-3 font-black text-black hover:bg-emerald-300">Check before spending</button>
+
+            {expenseDecision && (
+              <div className={`mt-6 rounded-3xl border p-5 ${expenseDecision.verdict === 'approve' ? 'border-emerald-300/30 bg-emerald-400/10' : expenseDecision.verdict === 'caution' ? 'border-amber-300/30 bg-amber-400/10' : 'border-red-300/30 bg-red-400/10'}`}>
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <p className="text-xs font-black uppercase tracking-[0.3em] text-white/50">Verdict</p>
+                    <h3 className="mt-1 text-3xl font-black capitalize">{expenseDecision.verdict}</h3>
+                    <p className="mt-2 text-white/75">{expenseDecision.summary}</p>
+                  </div>
+                  <div className="rounded-2xl bg-black/25 p-4 text-right">
+                    <p className="text-xs text-white/50">Goal impact</p>
+                    <p className="text-2xl font-black">{formatMoney(expenseDecision.goalImpactAmount)}</p>
+                    <p className="text-xs text-white/50">Expense: {formatMoney(expenseDecision.amountNgn)}</p>
+                  </div>
+                </div>
+                <div className="mt-5 grid gap-4 md:grid-cols-2">
+                  <div>
+                    <p className="mb-2 font-bold">Why Groot says this</p>
+                    <ul className="space-y-2 text-sm text-white/70">{expenseDecision.reasons.map((reason) => <li key={reason} className="rounded-xl bg-black/20 p-3">{reason}</li>)}</ul>
+                  </div>
+                  <div>
+                    <p className="mb-2 font-bold">Recommended move</p>
+                    <ul className="space-y-2 text-sm text-white/70">{expenseDecision.recommendations.map((recommendation) => <li key={recommendation} className="rounded-xl bg-black/20 p-3">{recommendation}</li>)}</ul>
+                  </div>
+                </div>
+              </div>
+            )}
+          </Panel>
+        )}
+
         {activeTab === 'goals' && (
           <Panel title="Goals">
             <div className="grid gap-3 md:grid-cols-5">
@@ -466,16 +531,17 @@ export default function Home() {
 
         {activeTab === 'expenses' && (
           <Panel title="Expenses and bills">
-            <div className="grid gap-3 md:grid-cols-6">
+            <div className="grid gap-3 md:grid-cols-7">
               <Input label="Expense name" value={expenseDraft.name} onChange={(value) => setExpenseDraft({ ...expenseDraft, name: value })} />
               <Input label="Amount" type="number" value={expenseDraft.amount} onChange={(value) => setExpenseDraft({ ...expenseDraft, amount: value })} />
               <Select label="Currency" value={expenseDraft.currency} onChange={(value) => setExpenseDraft({ ...expenseDraft, currency: value as Currency })} options={['NGN', 'USD']} />
+              <Select label="Frequency" value={expenseDraft.frequency} onChange={(value) => setExpenseDraft({ ...expenseDraft, frequency: value as RecurringExpense['frequency'] })} options={['monthly', 'yearly', 'weekly', 'one-time']} />
               <Input label="Category" value={expenseDraft.category} onChange={(value) => setExpenseDraft({ ...expenseDraft, category: value })} />
               <Select label="Priority" value={expenseDraft.priority} onChange={(value) => setExpenseDraft({ ...expenseDraft, priority: value as ExpensePriority })} options={['must-pay', 'important', 'flexible', 'pauseable']} />
               <label className="flex items-end gap-2 rounded-xl bg-white/5 p-3 text-sm"><input type="checkbox" checked={expenseDraft.workCritical} onChange={(event) => setExpenseDraft({ ...expenseDraft, workCritical: event.target.checked })} /> Work-critical</label>
             </div>
             <button onClick={addExpense} className="mt-4 rounded-xl bg-emerald-400 px-5 py-2 font-bold text-black">Add expense</button>
-            <List items={state.expenses.map((expense) => `${expense.name} — ${formatMoney(expense.amount, expense.currency)} — ${expense.priority}${expense.workCritical ? ' — work-critical' : ''}`)} />
+            <List items={state.expenses.map((expense) => `${expense.name} — ${formatMoney(expense.amount, expense.currency)} ${expense.frequency === 'yearly' ? 'yearly' : 'monthly'} — monthly planning: ${formatMoney(getMonthlyExpenseAmount(expense, 1600))} — ${expense.priority}${expense.workCritical ? ' — work-critical' : ''}`)} />
           </Panel>
         )}
       </section>
