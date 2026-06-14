@@ -49,20 +49,29 @@ Browser UI
   ↓
 Next.js /api/finance-state
   ↓
-SQLite finance ledger
+Finance store selector
+  ├─ Production: Turso/libSQL cloud database when TURSO_DATABASE_URL + TURSO_AUTH_TOKEN exist
+  └─ Local dev fallback: file-based libSQL SQLite
   ↓
 Goals, debts, expenses, incomes, allocation plans, allocation line items
 ```
 
-The app now treats SQLite as the source of truth for finance history. LocalStorage remains only as a browser fallback copy.
+The app now treats **Turso/libSQL** as the production source of truth for finance history. LocalStorage remains only as a browser fallback copy if the API is unavailable.
 
-For local/self-hosted deployments, set the SQLite file path with:
+Production environment variables:
+
+```bash
+TURSO_DATABASE_URL=libsql://your-database-org.turso.io
+TURSO_AUTH_TOKEN=your_turso_database_token
+```
+
+For local development without Turso, the app uses a local libSQL SQLite file. You can set the path with:
 
 ```bash
 REX_FINANCE_DB_PATH=/persistent/path/rex-finance-os.sqlite
 ```
 
-On Vercel, plain file-based SQLite uses serverless temporary storage. For serious production persistence on Vercel, move the same SQLite model to Turso/libSQL or another managed persistent database.
+This keeps the same SQLite model locally while using durable Turso cloud SQLite in production.
 
 ## Quality checks
 
@@ -74,7 +83,7 @@ npm run build
 
 ## Privacy/persistence note
 
-The app now writes finance state to SQLite through `/api/finance-state` and keeps a LocalStorage fallback copy in the browser. Local/self-hosted SQLite is durable when the database file lives on persistent disk. On Vercel, file-based SQLite should be treated as temporary unless upgraded to Turso/libSQL or another persistent managed database.
+The app writes finance state to Turso/libSQL in production through `/api/finance-state` and keeps a LocalStorage fallback copy in the browser. Local development can use file-based libSQL SQLite; production Vercel should use `TURSO_DATABASE_URL` and `TURSO_AUTH_TOKEN` for durable cloud persistence.
 
 ## Future upgrades
 

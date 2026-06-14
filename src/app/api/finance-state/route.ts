@@ -1,12 +1,12 @@
-import { getFinanceStore } from '@/lib/sqlite-store';
+import { getFinanceStore } from '@/lib/finance-store';
 import type { AppState } from '@/lib/finance';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
-  const store = getFinanceStore();
-  return Response.json({ state: store.getAppState() });
+  const store = await getFinanceStore();
+  return Response.json({ state: await store.getAppState(), mode: store.mode });
 }
 
 export async function PUT(request: Request) {
@@ -16,7 +16,7 @@ export async function PUT(request: Request) {
     return Response.json({ error: 'Invalid finance state payload.' }, { status: 400 });
   }
 
-  const store = getFinanceStore();
-  store.saveAppState(body.state);
-  return Response.json({ ok: true, state: store.getAppState() });
+  const store = await getFinanceStore();
+  await store.saveAppState(body.state);
+  return Response.json({ ok: true, state: await store.getAppState(), mode: store.mode });
 }

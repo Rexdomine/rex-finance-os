@@ -408,10 +408,11 @@ Examples:
 - Next.js
 - TypeScript
 - Tailwind CSS
-- SQLite via a Node.js API route for durable finance ledger persistence
+- Turso/libSQL cloud SQLite for production ledger persistence
+- File-based libSQL SQLite for local development fallback
 - Browser LocalStorage only as an offline/fallback copy
 
-## Updated architecture
+## Updated production architecture
 
 ```text
 User Browser
@@ -420,12 +421,14 @@ Next.js UI on Vercel/local server
   ↓
 /api/finance-state Route Handler
   ↓
-SQLite Finance Ledger
+Finance store selector
+  ├─ Production: Turso/libSQL via TURSO_DATABASE_URL + TURSO_AUTH_TOKEN
+  └─ Local dev: file-based libSQL SQLite
   ↓
 Normalized finance tables + full app-state snapshot
 ```
 
-SQLite stores:
+Turso/libSQL stores:
 
 - goals
 - debts
@@ -435,22 +438,22 @@ SQLite stores:
 - allocation line items
 - latest full app state snapshot
 
-Reason for SQLite upgrade:
+Reason for Turso/libSQL upgrade:
 
-- Income logs must survive browser refreshes and relate back to goals, debts, expenses, and allocation plans
-- The app needs a real ledger, not just browser state
-- SQLite is simple, portable, and easy to back up
-- The schema can later move to Turso/libSQL, Prisma, or another managed SQL database without changing the product model
+- Income logs must survive Vercel deploys, serverless restarts, and browser/device changes
+- Rex Finance OS manages important life/finance data, so temporary serverless storage is not acceptable
+- Turso keeps the SQLite model while providing a managed, durable cloud database
+- Local development remains simple because the same libSQL client can use a local SQLite file
 
-Important deployment note:
+Required production environment variables:
 
-- Local/self-hosted SQLite is durable when `REX_FINANCE_DB_PATH` points to a persistent disk path.
-- Vercel serverless file storage is not a long-term durable database. For production-grade persistence on Vercel, use a managed SQLite-compatible service such as Turso/libSQL or move hosting to a persistent-disk server.
+- `TURSO_DATABASE_URL`
+- `TURSO_AUTH_TOKEN`
 
 ## Later upgrade path
 
-- Add authentication before multi-user or sensitive cloud use
-- Move SQLite to managed Turso/libSQL for durable Vercel production persistence
+- Add authentication before multi-user or sensitive shared-device use
+- Add scheduled backups/export snapshots
 - Add export/import JSON backup
 - Add CSV/PDF export
 - Add Telegram reminders

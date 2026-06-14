@@ -71,18 +71,19 @@ MVP must let Rex:
 - Next.js
 - TypeScript
 - Tailwind CSS
-- SQLite ledger via `/api/finance-state` for income, goals, debts, expenses, and allocation plans
+- Turso/libSQL cloud SQLite ledger via `/api/finance-state` for production income, goals, debts, expenses, and allocation plans
+- File-based libSQL SQLite fallback for local development
 - LocalStorage fallback copy only
 
 Production persistence note:
 
-- Local/self-hosted SQLite is durable with `REX_FINANCE_DB_PATH` on persistent disk.
-- Vercel serverless file storage is temporary; use Turso/libSQL or persistent-disk hosting for serious Vercel production persistence.
+- Vercel production must set `TURSO_DATABASE_URL` and `TURSO_AUTH_TOKEN`.
+- If Turso env vars are missing, the app falls back to local file-based libSQL, which is useful for development but not durable on Vercel serverless.
 
 Future upgrade:
 
 - Auth
-- Managed SQLite/Turso cloud sync
+- Scheduled backups/export snapshots
 - CSV/PDF export
 - Telegram reminders
 

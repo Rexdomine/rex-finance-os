@@ -285,7 +285,8 @@ export default function Home() {
   const [decisionDraft, setDecisionDraft] = useState({ name: 'Sneakers', amount: '120000', currency: 'NGN' as Currency, category: 'Clothing', exchangeRate: '1600' });
   const [expenseDecision, setExpenseDecision] = useState<ExpenseDecision | null>(null);
   const [hasLoadedServerState, setHasLoadedServerState] = useState(false);
-  const [syncStatus, setSyncStatus] = useState('Loading SQLite ledger...');
+  const [syncStatus, setSyncStatus] = useState('Loading finance ledger...');
+  const [ledgerMode, setLedgerMode] = useState<'turso-libsql' | 'local-libsql' | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -294,10 +295,11 @@ export default function Home() {
       try {
         const response = await fetch('/api/finance-state', { cache: 'no-store' });
         if (!response.ok) throw new Error('SQLite API unavailable');
-        const data = (await response.json()) as { state: AppState };
+        const data = (await response.json()) as { state: AppState; mode?: 'turso-libsql' | 'local-libsql' };
         if (!active) return;
         setState(migrateState(data.state));
-        setSyncStatus('SQLite ledger connected');
+        setLedgerMode(data.mode ?? null);
+        setSyncStatus(data.mode === 'turso-libsql' ? 'Turso cloud ledger connected' : 'Local SQLite ledger connected');
       } catch {
         const stored = window.localStorage.getItem(STORAGE_KEY);
         if (stored && active) setState(migrateState(JSON.parse(stored)));
@@ -325,7 +327,10 @@ export default function Home() {
           signal: controller.signal,
         });
         if (!response.ok) throw new Error('SQLite save failed');
-        setSyncStatus('Saved to SQLite ledger');
+        const data = (await response.json()) as { mode?: 'turso-libsql' | 'local-libsql' };
+        const currentMode = data.mode ?? ledgerMode;
+        setLedgerMode(currentMode ?? null);
+        setSyncStatus(currentMode === 'turso-libsql' ? 'Saved to Turso cloud ledger' : 'Saved to local SQLite ledger');
       } catch {
         if (!controller.signal.aborted) setSyncStatus('SQLite save failed — browser copy kept');
       }
@@ -335,7 +340,7 @@ export default function Home() {
       controller.abort();
       window.clearTimeout(timeout);
     };
-  }, [hasLoadedServerState, state]);
+  }, [hasLoadedServerState, ledgerMode, state]);
 
   const dashboard = useMemo(() => {
     const activeGoals = state.goals.filter((goal) => goal.status === 'active');
