@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { applyAllocationPlanToProgress, checkExpenseDecision, getAllocationPlanProgressTotals, getAllocationPlanSignature, getMonthlyExpenseAmount, type ExpenseDecision } from '@/lib/finance';
+import { applyAllocationPlanToProgress, checkExpenseDecision, deleteAllocationPlan, getAllocationPlanProgressTotals, getAllocationPlanSignature, getMonthlyExpenseAmount, type ExpenseDecision } from '@/lib/finance';
 
 type Currency = 'NGN' | 'USD';
 type Priority = 'critical' | 'high' | 'medium' | 'low';
@@ -390,6 +390,19 @@ export default function Home() {
     setApplyStatus(`Applied: ${formatMoney(goalTotal)} added to goals and ${formatMoney(debtTotal)} paid down from debts. Saving to Turso...`);
   };
 
+  const deleteLastPlan = () => {
+    if (!state.lastPlan) return;
+
+    const warning = isLastPlanApplied
+      ? 'Delete this allocation plan? Your already-applied goal/debt progress will stay as-is. Only the visible plan and its apply marker will be removed.'
+      : 'Delete this allocation plan? This removes the visible plan only. No goal or debt progress has been applied yet.';
+
+    if (!window.confirm(warning)) return;
+
+    setState((previous) => deleteAllocationPlan(previous));
+    setApplyStatus('Allocation plan deleted. Saving to Turso...');
+  };
+
   const addGoal = () => {
     if (!goalDraft.name || !goalDraft.targetAmount) return;
     setState((previous) => ({
@@ -507,15 +520,28 @@ export default function Home() {
                     {state.lastPlan.warnings.map((warning) => <p key={warning} className="rounded-xl bg-amber-400/10 p-3 text-sm text-amber-100">⚠ {warning}</p>)}
                     {state.lastPlan.recommendations.map((recommendation) => <p key={recommendation} className="rounded-xl bg-blue-400/10 p-3 text-sm text-blue-100">💡 {recommendation}</p>)}
                     {applyStatus && <p className="rounded-xl bg-emerald-400/10 p-3 text-sm font-semibold text-emerald-100">✅ {applyStatus}</p>}
-                    <button
-                      onClick={applyLastPlan}
-                      disabled={isLastPlanApplied}
-                      className={`w-full rounded-2xl px-4 py-3 font-black text-black transition ${isLastPlanApplied ? 'cursor-not-allowed bg-emerald-200/60' : 'bg-emerald-400 hover:bg-emerald-300'}`}
-                    >
-                      {isLastPlanApplied ? 'Plan already applied' : 'Apply plan to goal/debt progress'}
-                    </button>
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <button
+                        onClick={applyLastPlan}
+                        disabled={isLastPlanApplied}
+                        className={`rounded-2xl px-4 py-3 font-black text-black transition ${isLastPlanApplied ? 'cursor-not-allowed bg-emerald-200/60' : 'bg-emerald-400 hover:bg-emerald-300'}`}
+                      >
+                        {isLastPlanApplied ? 'Plan already applied' : 'Apply plan to goal/debt progress'}
+                      </button>
+                      <button
+                        onClick={deleteLastPlan}
+                        className="rounded-2xl border border-red-300/30 bg-red-400/10 px-4 py-3 font-black text-red-100 transition hover:bg-red-400/20"
+                      >
+                        Delete allocation plan
+                      </button>
+                    </div>
                   </div>
-                ) : <p className="text-white/60">No allocation generated yet. Add income to cook the first split.</p>}
+                ) : (
+                  <div className="space-y-3">
+                    {applyStatus && <p className="rounded-xl bg-emerald-400/10 p-3 text-sm font-semibold text-emerald-100">✅ {applyStatus}</p>}
+                    <p className="text-white/60">No allocation generated yet. Add income to cook the first split.</p>
+                  </div>
+                )}
               </Panel>
             </div>
           </div>

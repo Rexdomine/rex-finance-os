@@ -3,6 +3,7 @@ import { describe, it } from 'node:test';
 import {
   applyAllocationPlanToProgress,
   buildDefaultState,
+  deleteAllocationPlan,
   generateAllocation,
   getMonthlyExpenseAmount,
   checkExpenseDecision,
@@ -74,6 +75,25 @@ describe('Rex Finance OS finance rules', () => {
     const appliedAgain = applyAllocationPlanToProgress(applied);
     assert.equal(appliedAgain.goals.find((goal) => goal.id === 'move-out')?.currentAmount, moveOutAfter.currentAmount);
     assert.equal(appliedAgain.debts.find((debt) => debt.id === 'bank-debt')?.remainingAmount, bankDebtAfter.remainingAmount);
+  });
+
+  it('deletes the latest allocation plan and clears its applied marker without reversing progress', () => {
+    const state = buildDefaultState();
+    const plan = generateAllocation(state, {
+      source: 'Client payment',
+      amount: 2043536,
+      currency: 'NGN',
+      exchangeRate: 1600,
+      date: '2026-06-14',
+    });
+    const applied = applyAllocationPlanToProgress({ ...state, lastPlan: plan });
+    const moveOutAfterApply = applied.goals.find((goal) => goal.id === 'move-out')?.currentAmount;
+
+    const withoutPlan = deleteAllocationPlan(applied);
+
+    assert.equal(withoutPlan.lastPlan, undefined);
+    assert.equal(withoutPlan.appliedPlanSignature, undefined);
+    assert.equal(withoutPlan.goals.find((goal) => goal.id === 'move-out')?.currentAmount, moveOutAfterApply);
   });
 
   it('flags non-essential clothing while critical move-out goal is behind target', () => {

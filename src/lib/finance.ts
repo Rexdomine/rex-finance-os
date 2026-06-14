@@ -179,6 +179,13 @@ export function getAllocationPlanProgressTotals(plan?: AllocationPlan) {
   };
 }
 
+export function deleteAllocationPlan(state: AppState): AppState {
+  const next = { ...state };
+  delete next.lastPlan;
+  delete next.appliedPlanSignature;
+  return next;
+}
+
 export function checkExpenseDecision(state: AppState, input: ExpenseDecisionInput): ExpenseDecision {
   const amountNgn = toNgn(input.amount, input.currency, input.exchangeRate || 1600);
   const category = input.category.toLowerCase();
