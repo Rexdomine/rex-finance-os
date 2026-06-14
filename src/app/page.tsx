@@ -155,6 +155,7 @@ const defaultState: AppState = {
     { id: 'prime', name: 'Prime Video', amount: 2500, currency: 'NGN', frequency: 'monthly', category: 'Subscriptions', priority: 'flexible', workCritical: false },
     { id: 'netflix', name: 'Netflix', amount: 8500, currency: 'NGN', frequency: 'monthly', category: 'Subscriptions', priority: 'flexible', workCritical: false },
     { id: 'lifestyle', name: 'Lifestyle Cap', amount: 50000, currency: 'NGN', frequency: 'monthly', category: 'Lifestyle', priority: 'flexible', workCritical: false },
+    { id: 'clothing', name: 'Clothing Cap', amount: 50000, currency: 'NGN', frequency: 'monthly', category: 'Clothing', priority: 'flexible', workCritical: false },
   ],
   incomes: [],
 };
@@ -220,6 +221,16 @@ function generateAllocation(state: AppState, income: Income): AllocationPlan {
   addItem('Emergency Savings', 'savings', Math.max(amountNgn * savingsRate, amountNgn < 100000 ? 1000 : 0), 'protective', 'Save something every time money enters, even if small.');
   addItem('Investment Seed', 'investment', Math.max(amountNgn * investmentRate, amountNgn < 100000 ? 1000 : 0), 'wealth-building', 'Small consistent investing builds the habit before wealth scales.');
 
+  const lifestyleExpense = state.expenses.find((expense) => expense.id === 'lifestyle');
+  if (lifestyleExpense) {
+    addItem(lifestyleExpense.name, 'lifestyle', Math.min(getMonthlyExpenseAmount(lifestyleExpense, income.exchangeRate || 1600), mode === 'Survival Mode' ? amountNgn * 0.04 : amountNgn * 0.08), 'honest living cap', 'Planned guilt-free outing money so the budget stays realistic, not punishing.');
+  }
+
+  const clothingExpense = state.expenses.find((expense) => expense.id === 'clothing');
+  if (clothingExpense) {
+    addItem(clothingExpense.name, 'expense', Math.min(getMonthlyExpenseAmount(clothingExpense, income.exchangeRate || 1600), mode === 'Survival Mode' ? amountNgn * 0.02 : amountNgn * 0.04), 'honest clothing cap', 'Allows at least one planned clothing item without turning it into untracked impulse spending.');
+  }
+
   if (activeCriticalGoal) {
     const goalRemaining = activeCriticalGoal.targetAmount - activeCriticalGoal.currentAmount;
     const targetDate = new Date(activeCriticalGoal.deadline + 'T23:59:59');
@@ -237,9 +248,6 @@ function generateAllocation(state: AppState, income: Income): AllocationPlan {
   importantExpenses.forEach((expense) => {
     addItem(expense.name, 'expense', Math.min(getMonthlyExpenseAmount(expense, income.exchangeRate || 1600), amountNgn * 0.08), 'important cap', 'Useful support category, but capped while critical goals are active.');
   });
-
-  const lifestyleCap = state.expenses.find((expense) => expense.id === 'lifestyle')?.amount ?? 50000;
-  addItem('Controlled Lifestyle', 'lifestyle', Math.min(lifestyleCap, mode === 'Survival Mode' ? amountNgn * 0.05 : amountNgn * 0.08), 'controlled', 'Guilt-free spending, but protected from eating the move-out goal.');
 
   if (remaining > 0) {
     const destination = activeCriticalGoal?.name ?? 'Buffer';
@@ -263,11 +271,15 @@ function progress(current: number, target: number) {
 }
 
 function migrateState(stored: AppState): AppState {
-  if (stored.expenses.some((expense) => expense.id === 'vps-hosting')) return stored;
-  const wisprIndex = stored.expenses.findIndex((expense) => expense.id === 'wispr');
-  const vps: RecurringExpense = { id: 'vps-hosting', name: 'VPS Hosting', amount: 96, currency: 'USD', frequency: 'yearly', category: 'Work tools', priority: 'must-pay', workCritical: true };
   const expenses = [...stored.expenses];
-  expenses.splice(wisprIndex >= 0 ? wisprIndex + 1 : 0, 0, vps);
+  const defaultsToEnsure = defaultState.expenses.filter((expense) => ['vps-hosting', 'lifestyle', 'clothing'].includes(expense.id));
+
+  defaultsToEnsure.forEach((defaultExpense) => {
+    if (expenses.some((expense) => expense.id === defaultExpense.id)) return;
+    const wisprIndex = expenses.findIndex((expense) => expense.id === 'wispr');
+    expenses.splice(wisprIndex >= 0 ? wisprIndex + 1 : expenses.length, 0, defaultExpense);
+  });
+
   return { ...stored, expenses };
 }
 

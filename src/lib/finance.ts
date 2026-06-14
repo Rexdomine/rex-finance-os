@@ -42,6 +42,7 @@ export function buildDefaultState(): AppState {
       { id: 'prime', name: 'Prime Video', amount: 2500, currency: 'NGN', frequency: 'monthly', category: 'Subscriptions', priority: 'flexible', workCritical: false },
       { id: 'netflix', name: 'Netflix', amount: 8500, currency: 'NGN', frequency: 'monthly', category: 'Subscriptions', priority: 'flexible', workCritical: false },
       { id: 'lifestyle', name: 'Lifestyle Cap', amount: 50000, currency: 'NGN', frequency: 'monthly', category: 'Lifestyle', priority: 'flexible', workCritical: false },
+      { id: 'clothing', name: 'Clothing Cap', amount: 50000, currency: 'NGN', frequency: 'monthly', category: 'Clothing', priority: 'flexible', workCritical: false },
     ],
     incomes: [],
   };
@@ -63,6 +64,19 @@ export function getMonthlyExpenseAmount(expense: RecurringExpense, exchangeRate:
 }
 
 function daysBetween(start: Date, end: Date) { return Math.max(1, Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24))); }
+
+export function ensureDefaultRecurringExpenses(state: AppState): AppState {
+  const defaults = buildDefaultState().expenses;
+  const expenses = [...state.expenses];
+
+  defaults.forEach((defaultExpense) => {
+    if (!expenses.some((expense) => expense.id === defaultExpense.id)) {
+      expenses.push(defaultExpense);
+    }
+  });
+
+  return { ...state, expenses };
+}
 
 export function generateAllocation(state: AppState, income: Income): AllocationPlan {
   const amountNgn = toNgn(income.amount, income.currency, income.exchangeRate || 1600);
@@ -95,6 +109,14 @@ export function generateAllocation(state: AppState, income: Income): AllocationP
   });
   addItem('Emergency Savings', 'savings', Math.max(amountNgn * (mode === 'Survival Mode' ? 0.05 : mode === 'Stability Mode' ? 0.07 : 0.08), amountNgn < 100000 ? 1000 : 0), 'protective', 'Save something every time money enters, even if small.');
   addItem('Investment Seed', 'investment', Math.max(amountNgn * (mode === 'Survival Mode' ? 0.03 : 0.05), amountNgn < 100000 ? 1000 : 0), 'wealth-building', 'Small consistent investing builds the habit before wealth scales.');
+  const lifestyleExpense = state.expenses.find((expense) => expense.id === 'lifestyle');
+  if (lifestyleExpense) {
+    addItem(lifestyleExpense.name, 'lifestyle', Math.min(getMonthlyExpenseAmount(lifestyleExpense, income.exchangeRate || 1600), mode === 'Survival Mode' ? amountNgn * 0.04 : amountNgn * 0.08), 'honest living cap', 'Planned guilt-free outing money so the budget stays realistic, not punishing.');
+  }
+  const clothingExpense = state.expenses.find((expense) => expense.id === 'clothing');
+  if (clothingExpense) {
+    addItem(clothingExpense.name, 'expense', Math.min(getMonthlyExpenseAmount(clothingExpense, income.exchangeRate || 1600), mode === 'Survival Mode' ? amountNgn * 0.02 : amountNgn * 0.04), 'honest clothing cap', 'Allows at least one planned clothing item without turning it into untracked impulse spending.');
+  }
   if (activeCriticalGoal) {
     const goalRemaining = activeCriticalGoal.targetAmount - activeCriticalGoal.currentAmount;
     const weeksLeft = daysBetween(new Date(income.date || new Date()), new Date(activeCriticalGoal.deadline + 'T23:59:59')) / 7;
@@ -103,7 +125,6 @@ export function generateAllocation(state: AppState, income: Income): AllocationP
     addItem(activeCriticalGoal.name, 'goal', Math.min(goalRemaining, Math.max(amountNgn * goalRate, mode === 'Move-Out Attack Mode' ? Math.min(weeklyNeed, remaining) : 0)), 'critical goal', `Deadline-based push. Current weekly target is about ${formatMoney(weeklyNeed)}.`);
   }
   state.expenses.filter((expense) => expense.priority === 'important').forEach((expense) => addItem(expense.name, 'expense', Math.min(getMonthlyExpenseAmount(expense, income.exchangeRate || 1600), amountNgn * 0.08), 'important cap', 'Useful support category, but capped while critical goals are active.'));
-  addItem('Controlled Lifestyle', 'lifestyle', Math.min(50000, mode === 'Survival Mode' ? amountNgn * 0.05 : amountNgn * 0.08), 'controlled', 'Guilt-free spending, but protected from eating the move-out goal.');
   if (remaining > 0) addItem(activeCriticalGoal?.name ?? 'Buffer', activeCriticalGoal ? 'goal' : 'buffer', remaining, activeCriticalGoal ? 'extra goal push' : 'buffer', activeCriticalGoal ? 'Extra unassigned cash should accelerate the critical goal.' : 'Keep unassigned cash as buffer.');
   if (amountNgn < monthlyMustPayNgn) warnings.push(`This income is below your estimated must-pay monthly expenses of ${formatMoney(monthlyMustPayNgn)}.`);
   if (activeCriticalGoal) {

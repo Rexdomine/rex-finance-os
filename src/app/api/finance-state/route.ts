@@ -1,12 +1,13 @@
 import { getFinanceStore } from '@/lib/finance-store';
-import type { AppState } from '@/lib/finance';
+import { ensureDefaultRecurringExpenses, type AppState } from '@/lib/finance';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
   const store = await getFinanceStore();
-  return Response.json({ state: await store.getAppState(), mode: store.mode });
+  const state = ensureDefaultRecurringExpenses(await store.getAppState());
+  return Response.json({ state, mode: store.mode });
 }
 
 export async function PUT(request: Request) {
@@ -17,6 +18,6 @@ export async function PUT(request: Request) {
   }
 
   const store = await getFinanceStore();
-  await store.saveAppState(body.state);
+  await store.saveAppState(ensureDefaultRecurringExpenses(body.state));
   return Response.json({ ok: true, state: await store.getAppState(), mode: store.mode });
 }
