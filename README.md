@@ -1,36 +1,61 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Rex Finance OS
 
-## Getting Started
+A personal variable-income finance command center for Rex.
 
-First, run the development server:
+Rex Finance OS helps decide what to do when money enters: fund work-critical tools, essentials, debts, savings, investments, active goals, and controlled lifestyle spending.
+
+## Current MVP
+
+- Dashboard for income, active goals, debts, and monthly expense pressure
+- Income entry with NGN/USD exchange rate support
+- Automatic Groot Split allocation engine
+- Goal tracking, including the Move-Out Fund
+- Dynamic debt tracking and repayment planning
+- Savings and investment contributions in every allocation where feasible
+- Recurring expenses with monthly/yearly/weekly/one-time frequency support
+- Expense Decision Checker with approve/caution/delay/avoid verdicts
+- Client-side LocalStorage persistence for MVP privacy and speed
+
+## Rex defaults
+
+- Move-Out Fund: ₦6,000,000 target with ₦1,200,000 saved
+- Bank Debt: ₦359,000 with ₦180,120 current due
+- OpenAI Max: $100/month
+- Wispr Flow: $12/month
+- VPS Hosting: $96/year, planned as $8/month
+- Internet: ₦50,000/month
+- Core essentials and lifestyle caps
+
+## Local development
 
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open:
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```text
+http://localhost:3000
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Quality checks
 
-## Learn More
+```bash
+npm test
+npm run lint
+npm run build
+```
 
-To learn more about Next.js, take a look at the following resources:
+## Privacy note
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+The MVP stores data in the browser using LocalStorage. No database or login is active yet. This keeps the first launch simple, but data is browser/device-specific.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Future upgrades
 
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- Auth + database
+- Hosted encrypted user data
+- Transaction history export
+- Bank/import integrations
+- Telegram reminders
+- AI monthly finance review
