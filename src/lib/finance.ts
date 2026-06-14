@@ -180,7 +180,31 @@ export function getAllocationPlanProgressTotals(plan?: AllocationPlan) {
 }
 
 export function deleteAllocationPlan(state: AppState): AppState {
-  const next = { ...state };
+  const shouldReverseAppliedProgress = Boolean(
+    state.lastPlan && state.appliedPlanSignature === getAllocationPlanSignature(state.lastPlan),
+  );
+
+  const goals = shouldReverseAppliedProgress
+    ? state.goals.map((goal) => {
+      const applied = state.lastPlan?.items
+        .filter((item) => item.destinationType === 'goal' && item.destinationName === goal.name)
+        .reduce((sum, item) => sum + item.amount, 0) ?? 0;
+      const currentAmount = Math.max(0, goal.currentAmount - applied);
+      return { ...goal, currentAmount, status: goal.status === 'completed' && currentAmount < goal.targetAmount ? 'active' as const : goal.status };
+    })
+    : state.goals;
+
+  const debts = shouldReverseAppliedProgress
+    ? state.debts.map((debt) => {
+      const paid = state.lastPlan?.items
+        .filter((item) => item.destinationType === 'debt' && item.destinationName === debt.name)
+        .reduce((sum, item) => sum + item.amount, 0) ?? 0;
+      const remainingAmount = Math.min(debt.totalAmount, debt.remainingAmount + paid);
+      return { ...debt, remainingAmount, status: debt.status === 'paid' && remainingAmount > 0 ? 'active' as const : debt.status };
+    })
+    : state.debts;
+
+  const next = { ...state, goals, debts };
   delete next.lastPlan;
   delete next.appliedPlanSignature;
   return next;

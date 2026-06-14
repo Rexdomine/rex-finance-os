@@ -77,7 +77,7 @@ describe('Rex Finance OS finance rules', () => {
     assert.equal(appliedAgain.debts.find((debt) => debt.id === 'bank-debt')?.remainingAmount, bankDebtAfter.remainingAmount);
   });
 
-  it('deletes the latest allocation plan and clears its applied marker without reversing progress', () => {
+  it('deletes an applied allocation plan and reverses the goal/debt progress from that plan', () => {
     const state = buildDefaultState();
     const plan = generateAllocation(state, {
       source: 'Client payment',
@@ -87,13 +87,32 @@ describe('Rex Finance OS finance rules', () => {
       date: '2026-06-14',
     });
     const applied = applyAllocationPlanToProgress({ ...state, lastPlan: plan });
-    const moveOutAfterApply = applied.goals.find((goal) => goal.id === 'move-out')?.currentAmount;
 
     const withoutPlan = deleteAllocationPlan(applied);
 
     assert.equal(withoutPlan.lastPlan, undefined);
     assert.equal(withoutPlan.appliedPlanSignature, undefined);
-    assert.equal(withoutPlan.goals.find((goal) => goal.id === 'move-out')?.currentAmount, moveOutAfterApply);
+    assert.equal(withoutPlan.goals.find((goal) => goal.id === 'move-out')?.currentAmount, state.goals.find((goal) => goal.id === 'move-out')?.currentAmount);
+    assert.equal(withoutPlan.debts.find((debt) => debt.id === 'bank-debt')?.remainingAmount, state.debts.find((debt) => debt.id === 'bank-debt')?.remainingAmount);
+  });
+
+  it('deletes an unapplied allocation plan without changing goal/debt progress', () => {
+    const state = buildDefaultState();
+    const plan = generateAllocation(state, {
+      source: 'Client payment',
+      amount: 2043536,
+      currency: 'NGN',
+      exchangeRate: 1600,
+      date: '2026-06-14',
+    });
+    const withPlan = { ...state, lastPlan: plan };
+
+    const withoutPlan = deleteAllocationPlan(withPlan);
+
+    assert.equal(withoutPlan.lastPlan, undefined);
+    assert.equal(withoutPlan.appliedPlanSignature, undefined);
+    assert.deepEqual(withoutPlan.goals, state.goals);
+    assert.deepEqual(withoutPlan.debts, state.debts);
   });
 
   it('flags non-essential clothing while critical move-out goal is behind target', () => {

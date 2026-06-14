@@ -298,6 +298,7 @@ export default function Home() {
   const [decisionDraft, setDecisionDraft] = useState({ name: 'Sneakers', amount: '120000', currency: 'NGN' as Currency, category: 'Clothing', exchangeRate: '1600' });
   const [expenseDecision, setExpenseDecision] = useState<ExpenseDecision | null>(null);
   const [applyStatus, setApplyStatus] = useState<string | null>(null);
+  const [isDeletePlanDialogOpen, setIsDeletePlanDialogOpen] = useState(false);
   const [hasLoadedServerState, setHasLoadedServerState] = useState(false);
   const [syncStatus, setSyncStatus] = useState('Loading finance ledger...');
   const [ledgerMode, setLedgerMode] = useState<'turso-libsql' | 'local-libsql' | null>(null);
@@ -368,11 +369,13 @@ export default function Home() {
 
   const currentPlanSignature = getAllocationPlanSignature(state.lastPlan);
   const isLastPlanApplied = Boolean(state.lastPlan && state.appliedPlanSignature === currentPlanSignature);
+  const deletePlanImpact = getAllocationPlanProgressTotals(state.lastPlan);
 
   const runAllocation = () => {
     const plan = generateAllocation(state, income);
     setState((previous) => ({ ...previous, incomes: [income, ...previous.incomes].slice(0, 25), lastPlan: plan, appliedPlanSignature: undefined }));
     setApplyStatus(null);
+    setIsDeletePlanDialogOpen(false);
     setActiveTab('dashboard');
   };
 
@@ -392,16 +395,20 @@ export default function Home() {
 
   const deleteLastPlan = () => {
     if (!state.lastPlan) return;
-
-    const warning = isLastPlanApplied
-      ? 'Delete this allocation plan? Your already-applied goal/debt progress will stay as-is. Only the visible plan and its apply marker will be removed.'
-      : 'Delete this allocation plan? This removes the visible plan only. No goal or debt progress has been applied yet.';
-
-    if (!window.confirm(warning)) return;
-
-    setState((previous) => deleteAllocationPlan(previous));
-    setApplyStatus('Allocation plan deleted. Saving to Turso...');
+    setIsDeletePlanDialogOpen(true);
   };
+
+  const confirmDeleteLastPlan = () => {
+    if (!state.lastPlan) return;
+    const { goalTotal, debtTotal } = getAllocationPlanProgressTotals(state.lastPlan);
+    setState((previous) => deleteAllocationPlan(previous));
+    setIsDeletePlanDialogOpen(false);
+    setApplyStatus(isLastPlanApplied
+      ? `Allocation plan deleted and reversed: ${formatMoney(goalTotal)} removed from goals and ${formatMoney(debtTotal)} restored to debts. Saving to Turso...`
+      : 'Allocation plan deleted. No goal or debt progress had been applied yet. Saving to Turso...');
+  };
+
+  const cancelDeleteLastPlan = () => setIsDeletePlanDialogOpen(false);
 
   const addGoal = () => {
     if (!goalDraft.name || !goalDraft.targetAmount) return;
@@ -645,6 +652,44 @@ export default function Home() {
             <button onClick={addExpense} className="mt-4 rounded-xl bg-emerald-400 px-5 py-2 font-bold text-black">Add expense</button>
             <List items={state.expenses.map((expense) => `${expense.name} — ${formatMoney(expense.amount, expense.currency)} ${expense.frequency === 'yearly' ? 'yearly' : 'monthly'} — monthly planning: ${formatMoney(getMonthlyExpenseAmount(expense, 1600))} — ${expense.priority}${expense.workCritical ? ' — work-critical' : ''}`)} />
           </Panel>
+        )}
+        {isDeletePlanDialogOpen && state.lastPlan && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="delete-plan-title">
+            <div className="w-full max-w-lg overflow-hidden rounded-[2rem] border border-red-300/30 bg-[#081711] shadow-2xl shadow-black/60">
+              <div className="border-b border-white/10 bg-gradient-to-br from-red-400/20 via-slate-950 to-emerald-950/40 p-6">
+                <p className="text-xs font-black uppercase tracking-[0.35em] text-red-200">Confirm deletion</p>
+                <h3 id="delete-plan-title" className="mt-3 text-2xl font-black text-white">Delete this allocation plan?</h3>
+                <p className="mt-3 text-sm leading-6 text-white/70">
+                  {isLastPlanApplied
+                    ? 'This plan has already updated your goals/debts. Deleting it will also reverse the applied Move-Out/debt progress from this exact allocation.'
+                    : 'This plan has not been applied yet. Deleting it will only remove the visible allocation plan.'}
+                </p>
+              </div>
+              <div className="space-y-4 p-6">
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="rounded-2xl bg-white/5 p-4">
+                    <p className="text-xs uppercase tracking-widest text-white/40">Goal progress to remove</p>
+                    <p className="mt-2 text-xl font-black text-red-100">{formatMoney(isLastPlanApplied ? deletePlanImpact.goalTotal : 0)}</p>
+                  </div>
+                  <div className="rounded-2xl bg-white/5 p-4">
+                    <p className="text-xs uppercase tracking-widest text-white/40">Debt balance to restore</p>
+                    <p className="mt-2 text-xl font-black text-amber-100">{formatMoney(isLastPlanApplied ? deletePlanImpact.debtTotal : 0)}</p>
+                  </div>
+                </div>
+                <p className="rounded-2xl border border-amber-300/20 bg-amber-400/10 p-4 text-sm text-amber-50">
+                  Groot safety check: this cannot be undone automatically after saving. If this was the wrong plan, cancel and review first.
+                </p>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <button onClick={cancelDeleteLastPlan} className="rounded-2xl border border-white/10 bg-white/10 px-4 py-3 font-black text-white transition hover:bg-white/15">
+                    Cancel, keep plan
+                  </button>
+                  <button onClick={confirmDeleteLastPlan} className="rounded-2xl bg-red-400 px-4 py-3 font-black text-black transition hover:bg-red-300">
+                    {isLastPlanApplied ? 'Yes, delete and reverse' : 'Yes, delete plan'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
         )}
       </section>
     </main>
