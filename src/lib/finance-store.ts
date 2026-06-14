@@ -12,7 +12,8 @@ import {
   type RecurringExpense,
 } from './finance';
 
-const DEFAULT_LOCAL_DB_PATH = process.env.REX_FINANCE_DB_PATH ?? join(process.cwd(), 'data', 'rex-finance-os.sqlite');
+const DEFAULT_LOCAL_DB_PATH = process.env.REX_FINANCE_DB_PATH
+  ?? (process.env.VERCEL ? '/tmp/rex-finance-os.sqlite' : join(process.cwd(), 'data', 'rex-finance-os.sqlite'));
 
 type StoreMode = 'turso-libsql' | 'local-libsql';
 

@@ -48,6 +48,26 @@ describe('libSQL/Turso finance persistence', () => {
     }
   });
 
+  it('uses writable /tmp local fallback on Vercel when Turso env vars are missing', async () => {
+    const previousVercel = process.env.VERCEL;
+    const previousDbPath = process.env.REX_FINANCE_DB_PATH;
+    process.env.VERCEL = '1';
+    delete process.env.REX_FINANCE_DB_PATH;
+
+    try {
+      const store = await createFinanceStore();
+      assert.equal(store.mode, 'local-libsql');
+      const state = await store.getAppState();
+      await store.close();
+      assert.equal(state.goals.length, 3);
+    } finally {
+      if (previousVercel === undefined) delete process.env.VERCEL;
+      else process.env.VERCEL = previousVercel;
+      if (previousDbPath === undefined) delete process.env.REX_FINANCE_DB_PATH;
+      else process.env.REX_FINANCE_DB_PATH = previousDbPath;
+    }
+  });
+
   it('selects Turso/libSQL cloud mode when Turso URL and auth token are provided', async () => {
     const calls: Array<{ url: string; authToken?: string }> = [];
     const store = await createFinanceStore({
