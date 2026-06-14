@@ -408,18 +408,49 @@ Examples:
 - Next.js
 - TypeScript
 - Tailwind CSS
-- LocalStorage for MVP persistence
+- SQLite via a Node.js API route for durable finance ledger persistence
+- Browser LocalStorage only as an offline/fallback copy
 
-Reason for LocalStorage MVP:
+## Updated architecture
 
-- Fastest to build and test
-- No auth/database setup required
-- Easy migration later to SQLite/Prisma/Supabase
+```text
+User Browser
+  ↓
+Next.js UI on Vercel/local server
+  ↓
+/api/finance-state Route Handler
+  ↓
+SQLite Finance Ledger
+  ↓
+Normalized finance tables + full app-state snapshot
+```
+
+SQLite stores:
+
+- goals
+- debts
+- recurring expenses
+- income history
+- allocation plans
+- allocation line items
+- latest full app state snapshot
+
+Reason for SQLite upgrade:
+
+- Income logs must survive browser refreshes and relate back to goals, debts, expenses, and allocation plans
+- The app needs a real ledger, not just browser state
+- SQLite is simple, portable, and easy to back up
+- The schema can later move to Turso/libSQL, Prisma, or another managed SQL database without changing the product model
+
+Important deployment note:
+
+- Local/self-hosted SQLite is durable when `REX_FINANCE_DB_PATH` points to a persistent disk path.
+- Vercel serverless file storage is not a long-term durable database. For production-grade persistence on Vercel, use a managed SQLite-compatible service such as Turso/libSQL or move hosting to a persistent-disk server.
 
 ## Later upgrade path
 
-- Add SQLite + Prisma for local durable database
-- Add authentication if deployed publicly
+- Add authentication before multi-user or sensitive cloud use
+- Move SQLite to managed Turso/libSQL for durable Vercel production persistence
 - Add export/import JSON backup
 - Add CSV/PDF export
 - Add Telegram reminders

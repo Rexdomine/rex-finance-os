@@ -284,10 +284,58 @@ export default function Home() {
   const [expenseDraft, setExpenseDraft] = useState({ name: '', amount: '', currency: 'NGN' as Currency, frequency: 'monthly' as RecurringExpense['frequency'], category: 'Essentials', priority: 'important' as ExpensePriority, workCritical: false });
   const [decisionDraft, setDecisionDraft] = useState({ name: 'Sneakers', amount: '120000', currency: 'NGN' as Currency, category: 'Clothing', exchangeRate: '1600' });
   const [expenseDecision, setExpenseDecision] = useState<ExpenseDecision | null>(null);
+  const [hasLoadedServerState, setHasLoadedServerState] = useState(false);
+  const [syncStatus, setSyncStatus] = useState('Loading SQLite ledger...');
 
   useEffect(() => {
+    let active = true;
+
+    async function loadServerState() {
+      try {
+        const response = await fetch('/api/finance-state', { cache: 'no-store' });
+        if (!response.ok) throw new Error('SQLite API unavailable');
+        const data = (await response.json()) as { state: AppState };
+        if (!active) return;
+        setState(migrateState(data.state));
+        setSyncStatus('SQLite ledger connected');
+      } catch {
+        const stored = window.localStorage.getItem(STORAGE_KEY);
+        if (stored && active) setState(migrateState(JSON.parse(stored)));
+        if (active) setSyncStatus('SQLite sync unavailable — using browser fallback');
+      } finally {
+        if (active) setHasLoadedServerState(true);
+      }
+    }
+
+    loadServerState();
+    return () => { active = false; };
+  }, []);
+
+  useEffect(() => {
+    if (!hasLoadedServerState) return;
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-  }, [state]);
+
+    const controller = new AbortController();
+    const timeout = window.setTimeout(async () => {
+      try {
+        const response = await fetch('/api/finance-state', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ state }),
+          signal: controller.signal,
+        });
+        if (!response.ok) throw new Error('SQLite save failed');
+        setSyncStatus('Saved to SQLite ledger');
+      } catch {
+        if (!controller.signal.aborted) setSyncStatus('SQLite save failed — browser copy kept');
+      }
+    }, 350);
+
+    return () => {
+      controller.abort();
+      window.clearTimeout(timeout);
+    };
+  }, [hasLoadedServerState, state]);
 
   const dashboard = useMemo(() => {
     const activeGoals = state.goals.filter((goal) => goal.status === 'active');
@@ -376,6 +424,7 @@ export default function Home() {
               <p className="text-sm text-emerald-100/70">Current mode</p>
               <p className="text-2xl font-bold">Move-Out Attack</p>
               <p className="text-sm text-emerald-200">Save/invest stays on, even small.</p>
+              <p className="mt-3 rounded-full bg-black/25 px-3 py-1 text-xs font-bold text-emerald-100">{syncStatus}</p>
             </div>
           </div>
         </header>
@@ -390,7 +439,7 @@ export default function Home() {
         {activeTab === 'dashboard' && (
           <div className="grid gap-6">
             <div className="grid gap-4 md:grid-cols-4">
-              <Metric title="Income logged" value={formatMoney(dashboard.totalIncome)} note="Local MVP history" />
+              <Metric title="Income logged" value={formatMoney(dashboard.totalIncome)} note="SQLite ledger history" />
               <Metric title="Active goal gap" value={formatMoney(dashboard.goalRemaining)} note="All active goals" />
               <Metric title="Debt remaining" value={formatMoney(dashboard.debtRemaining)} note="Active debts only" />
               <Metric title="Monthly expense map" value={formatMoney(dashboard.monthlyExpenses)} note="Includes USD tools @ ₦1,600/$" />

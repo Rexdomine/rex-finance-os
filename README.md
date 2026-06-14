@@ -16,7 +16,8 @@ Rex Finance OS helps decide what to do when money enters: fund work-critical too
 - Savings and investment contributions in every allocation where feasible
 - Recurring expenses with monthly/yearly/weekly/one-time frequency support
 - Expense Decision Checker with approve/caution/delay/avoid verdicts
-- Client-side LocalStorage persistence for MVP privacy and speed
+- SQLite-backed finance ledger through a Next.js API route
+- Browser LocalStorage fallback if SQLite sync is unavailable
 
 ## Rex defaults
 
@@ -41,6 +42,28 @@ Open:
 http://localhost:3000
 ```
 
+## Architecture
+
+```text
+Browser UI
+  ↓
+Next.js /api/finance-state
+  ↓
+SQLite finance ledger
+  ↓
+Goals, debts, expenses, incomes, allocation plans, allocation line items
+```
+
+The app now treats SQLite as the source of truth for finance history. LocalStorage remains only as a browser fallback copy.
+
+For local/self-hosted deployments, set the SQLite file path with:
+
+```bash
+REX_FINANCE_DB_PATH=/persistent/path/rex-finance-os.sqlite
+```
+
+On Vercel, plain file-based SQLite uses serverless temporary storage. For serious production persistence on Vercel, move the same SQLite model to Turso/libSQL or another managed persistent database.
+
 ## Quality checks
 
 ```bash
@@ -49,9 +72,9 @@ npm run lint
 npm run build
 ```
 
-## Privacy note
+## Privacy/persistence note
 
-The MVP stores data in the browser using LocalStorage. No database or login is active yet. This keeps the first launch simple, but data is browser/device-specific.
+The app now writes finance state to SQLite through `/api/finance-state` and keeps a LocalStorage fallback copy in the browser. Local/self-hosted SQLite is durable when the database file lives on persistent disk. On Vercel, file-based SQLite should be treated as temporary unless upgraded to Turso/libSQL or another persistent managed database.
 
 ## Future upgrades
 

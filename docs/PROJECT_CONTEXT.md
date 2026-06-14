@@ -71,13 +71,18 @@ MVP must let Rex:
 - Next.js
 - TypeScript
 - Tailwind CSS
-- LocalStorage persistence for fastest MVP
+- SQLite ledger via `/api/finance-state` for income, goals, debts, expenses, and allocation plans
+- LocalStorage fallback copy only
+
+Production persistence note:
+
+- Local/self-hosted SQLite is durable with `REX_FINANCE_DB_PATH` on persistent disk.
+- Vercel serverless file storage is temporary; use Turso/libSQL or persistent-disk hosting for serious Vercel production persistence.
 
 Future upgrade:
 
-- SQLite/Prisma or Supabase
 - Auth
-- Cloud sync
+- Managed SQLite/Turso cloud sync
 - CSV/PDF export
 - Telegram reminders
 
