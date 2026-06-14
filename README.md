@@ -2,6 +2,8 @@
 
 A personal variable-income finance command center for Rex.
 
+Live app: https://rex-finance-os.vercel.app
+
 Rex Finance OS helps decide what to do when money enters: fund work-critical tools, essentials, debts, savings, investments, active goals, and controlled lifestyle spending.
 
 ## Current MVP
