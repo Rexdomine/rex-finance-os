@@ -18,4 +18,9 @@ describe('Rex Finance OS page UX contracts', () => {
     assert.match(pageSource, /Cancel, keep expense/i);
     assert.match(pageSource, /Yes, delete expense/i);
   });
+
+  it('does not auto-readd deleted default expenses during state migration', () => {
+    assert.doesNotMatch(pageSource, /defaultsToEnsure/);
+    assert.doesNotMatch(pageSource, /expenses\.splice/);
+  });
 });

@@ -272,16 +272,7 @@ function progress(current: number, target: number) {
 }
 
 function migrateState(stored: AppState): AppState {
-  const expenses = [...stored.expenses];
-  const defaultsToEnsure = defaultState.expenses.filter((expense) => ['vps-hosting', 'lifestyle', 'clothing'].includes(expense.id));
-
-  defaultsToEnsure.forEach((defaultExpense) => {
-    if (expenses.some((expense) => expense.id === defaultExpense.id)) return;
-    const wisprIndex = expenses.findIndex((expense) => expense.id === 'wispr');
-    expenses.splice(wisprIndex >= 0 ? wisprIndex + 1 : expenses.length, 0, defaultExpense);
-  });
-
-  return { ...stored, expenses };
+  return stored;
 }
 
 export default function Home() {
