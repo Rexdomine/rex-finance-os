@@ -299,6 +299,7 @@ export default function Home() {
   const [expenseDecision, setExpenseDecision] = useState<ExpenseDecision | null>(null);
   const [expenseStatus, setExpenseStatus] = useState<string | null>(null);
   const [expenseStatusTone, setExpenseStatusTone] = useState<'success' | 'warning'>('success');
+  const [expenseToDelete, setExpenseToDelete] = useState<RecurringExpense | null>(null);
   const [applyStatus, setApplyStatus] = useState<string | null>(null);
   const [isDeletePlanDialogOpen, setIsDeletePlanDialogOpen] = useState(false);
   const [hasLoadedServerState, setHasLoadedServerState] = useState(false);
@@ -455,6 +456,23 @@ export default function Home() {
     setExpenseStatusTone('success');
     setExpenseStatus(`Expense added: ${addedExpense.name} — ${formatMoney(addedExpense.amount, addedExpense.currency)} ${addedExpense.frequency}. Saving to ledger...`);
     setExpenseDraft({ name: '', amount: '', currency: 'NGN', frequency: 'monthly', category: 'Essentials', priority: 'important', workCritical: false });
+  };
+
+  const requestDeleteExpense = (expense: RecurringExpense) => {
+    setExpenseToDelete(expense);
+  };
+
+  const cancelDeleteExpense = () => setExpenseToDelete(null);
+
+  const confirmDeleteExpense = () => {
+    if (!expenseToDelete) return;
+    setState((previous) => ({
+      ...previous,
+      expenses: previous.expenses.filter((expense) => expense.id !== expenseToDelete.id),
+    }));
+    setExpenseStatusTone('success');
+    setExpenseStatus(`Expense deleted: ${expenseToDelete.name}. Saving to ledger...`);
+    setExpenseToDelete(null);
   };
 
   const runExpenseDecision = () => {
@@ -678,7 +696,19 @@ export default function Home() {
                 {expenseStatusTone === 'success' ? '✅' : '⚠️'} {expenseStatus}
               </p>
             )}
-            <List items={state.expenses.map((expense) => `${expense.name} — ${formatMoney(expense.amount, expense.currency)} ${expense.frequency === 'yearly' ? 'yearly' : 'monthly'} — monthly planning: ${formatMoney(getMonthlyExpenseAmount(expense, 1600))} — ${expense.priority}${expense.workCritical ? ' — work-critical' : ''}`)} />
+            <div className="mt-5 space-y-2">
+              {state.expenses.map((expense) => (
+                <div key={expense.id} className="flex flex-col gap-3 rounded-xl bg-white/5 p-3 text-sm text-white/75 sm:flex-row sm:items-center sm:justify-between">
+                  <span>{expense.name} — {formatMoney(expense.amount, expense.currency)} {expense.frequency === 'yearly' ? 'yearly' : 'monthly'} — monthly planning: {formatMoney(getMonthlyExpenseAmount(expense, 1600))} — {expense.priority}{expense.workCritical ? ' — work-critical' : ''}</span>
+                  <button
+                    onClick={() => requestDeleteExpense(expense)}
+                    className="self-start rounded-xl border border-red-300/30 bg-red-400/10 px-3 py-2 text-xs font-black text-red-100 transition hover:bg-red-400/20 sm:self-auto"
+                  >
+                    Delete expense
+                  </button>
+                </div>
+              ))}
+            </div>
           </Panel>
         )}
         {isDeletePlanDialogOpen && state.lastPlan && (
@@ -717,6 +747,39 @@ export default function Home() {
                   </button>
                   <button onClick={confirmDeleteLastPlan} className="rounded-2xl bg-red-400 px-4 py-3 font-black text-black transition hover:bg-red-300">
                     {isLastPlanApplied ? 'Yes, delete and reverse' : 'Yes, delete plan'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+        {expenseToDelete && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="delete-expense-title">
+            <div className="w-full max-w-lg overflow-hidden rounded-[2rem] border border-red-300/30 bg-[#081711] shadow-2xl shadow-black/60">
+              <div className="border-b border-white/10 bg-gradient-to-br from-red-400/20 via-slate-950 to-emerald-950/40 p-6">
+                <p className="text-xs font-black uppercase tracking-[0.35em] text-red-200">Confirm expense removal</p>
+                <h3 id="delete-expense-title" className="mt-3 text-2xl font-black text-white">Delete this expense?</h3>
+                <p className="mt-3 text-sm leading-6 text-white/70">
+                  This removes the expense from your monthly expense map and future allocation planning. It will not touch income history, goals, or debts.
+                </p>
+              </div>
+              <div className="space-y-4 p-6">
+                <div className="rounded-2xl bg-white/5 p-4">
+                  <p className="text-xs uppercase tracking-widest text-white/40">Expense to remove</p>
+                  <p className="mt-2 text-xl font-black text-white">{expenseToDelete.name}</p>
+                  <p className="mt-1 text-sm text-white/60">
+                    {formatMoney(expenseToDelete.amount, expenseToDelete.currency)} {expenseToDelete.frequency} · monthly planning {formatMoney(getMonthlyExpenseAmount(expenseToDelete, 1600))}
+                  </p>
+                </div>
+                <p className="rounded-2xl border border-amber-300/20 bg-amber-400/10 p-4 text-sm text-amber-50">
+                  Groot safety check: cancel if you only wanted to review this expense. Confirming will save the updated expense list to the ledger.
+                </p>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <button onClick={cancelDeleteExpense} className="rounded-2xl border border-white/10 bg-white/10 px-4 py-3 font-black text-white transition hover:bg-white/15">
+                    Cancel, keep expense
+                  </button>
+                  <button onClick={confirmDeleteExpense} className="rounded-2xl bg-red-400 px-4 py-3 font-black text-black transition hover:bg-red-300">
+                    Yes, delete expense
                   </button>
                 </div>
               </div>

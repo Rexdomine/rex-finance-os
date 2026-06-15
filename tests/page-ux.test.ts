@@ -10,4 +10,12 @@ describe('Rex Finance OS page UX contracts', () => {
     assert.match(pageSource, /Expense added/i);
     assert.match(pageSource, /aria-live="polite"/);
   });
+
+  it('requires a custom confirmation dialog before deleting an expense', () => {
+    assert.match(pageSource, /expenseToDelete/);
+    assert.match(pageSource, /Delete expense/i);
+    assert.match(pageSource, /Delete this expense\?/i);
+    assert.match(pageSource, /Cancel, keep expense/i);
+    assert.match(pageSource, /Yes, delete expense/i);
+  });
 });
