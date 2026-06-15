@@ -297,6 +297,8 @@ export default function Home() {
   const [expenseDraft, setExpenseDraft] = useState({ name: '', amount: '', currency: 'NGN' as Currency, frequency: 'monthly' as RecurringExpense['frequency'], category: 'Essentials', priority: 'important' as ExpensePriority, workCritical: false });
   const [decisionDraft, setDecisionDraft] = useState({ name: 'Sneakers', amount: '120000', currency: 'NGN' as Currency, category: 'Clothing', exchangeRate: '1600' });
   const [expenseDecision, setExpenseDecision] = useState<ExpenseDecision | null>(null);
+  const [expenseStatus, setExpenseStatus] = useState<string | null>(null);
+  const [expenseStatusTone, setExpenseStatusTone] = useState<'success' | 'warning'>('success');
   const [applyStatus, setApplyStatus] = useState<string | null>(null);
   const [isDeletePlanDialogOpen, setIsDeletePlanDialogOpen] = useState(false);
   const [hasLoadedServerState, setHasLoadedServerState] = useState(false);
@@ -429,11 +431,29 @@ export default function Home() {
   };
 
   const addExpense = () => {
-    if (!expenseDraft.name || !expenseDraft.amount) return;
+    if (!expenseDraft.name || !expenseDraft.amount) {
+      setExpenseStatusTone('warning');
+      setExpenseStatus('Add an expense name and amount first.');
+      return;
+    }
+
+    const addedExpense = {
+      id: uid(),
+      name: expenseDraft.name,
+      amount: Number(expenseDraft.amount),
+      currency: expenseDraft.currency,
+      frequency: expenseDraft.frequency,
+      category: expenseDraft.category,
+      priority: expenseDraft.priority,
+      workCritical: expenseDraft.workCritical,
+    };
+
     setState((previous) => ({
       ...previous,
-      expenses: [...previous.expenses, { id: uid(), name: expenseDraft.name, amount: Number(expenseDraft.amount), currency: expenseDraft.currency, frequency: expenseDraft.frequency, category: expenseDraft.category, priority: expenseDraft.priority, workCritical: expenseDraft.workCritical }],
+      expenses: [...previous.expenses, addedExpense],
     }));
+    setExpenseStatusTone('success');
+    setExpenseStatus(`Expense added: ${addedExpense.name} — ${formatMoney(addedExpense.amount, addedExpense.currency)} ${addedExpense.frequency}. Saving to ledger...`);
     setExpenseDraft({ name: '', amount: '', currency: 'NGN', frequency: 'monthly', category: 'Essentials', priority: 'important', workCritical: false });
   };
 
@@ -650,6 +670,14 @@ export default function Home() {
               <label className="flex items-end gap-2 rounded-xl bg-white/5 p-3 text-sm"><input type="checkbox" checked={expenseDraft.workCritical} onChange={(event) => setExpenseDraft({ ...expenseDraft, workCritical: event.target.checked })} /> Work-critical</label>
             </div>
             <button onClick={addExpense} className="mt-4 rounded-xl bg-emerald-400 px-5 py-2 font-bold text-black">Add expense</button>
+            {expenseStatus && (
+              <p
+                aria-live="polite"
+                className={`mt-3 rounded-xl border p-3 text-sm font-semibold ${expenseStatusTone === 'success' ? 'border-emerald-300/20 bg-emerald-400/10 text-emerald-100' : 'border-amber-300/25 bg-amber-400/10 text-amber-100'}`}
+              >
+                {expenseStatusTone === 'success' ? '✅' : '⚠️'} {expenseStatus}
+              </p>
+            )}
             <List items={state.expenses.map((expense) => `${expense.name} — ${formatMoney(expense.amount, expense.currency)} ${expense.frequency === 'yearly' ? 'yearly' : 'monthly'} — monthly planning: ${formatMoney(getMonthlyExpenseAmount(expense, 1600))} — ${expense.priority}${expense.workCritical ? ' — work-critical' : ''}`)} />
           </Panel>
         )}

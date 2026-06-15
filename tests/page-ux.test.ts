@@ -1,0 +1,13 @@
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { describe, it } from 'node:test';
+
+const pageSource = readFileSync(new URL('../src/app/page.tsx', import.meta.url), 'utf8');
+
+describe('Rex Finance OS page UX contracts', () => {
+  it('shows immediate confirmation near the Add expense button after an expense is added', () => {
+    assert.match(pageSource, /expenseStatus/);
+    assert.match(pageSource, /Expense added/i);
+    assert.match(pageSource, /aria-live="polite"/);
+  });
+});
