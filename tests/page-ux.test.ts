@@ -46,6 +46,10 @@ describe('Rex Finance OS page UX contracts', () => {
     assert.match(pageSource, /excludedAmountNgn/);
   });
 
+  it('filters allocation cards that would display as zero after currency rounding', () => {
+    assert.match(pageSource, /lastPlan\.items\.filter\(\(item\) => Math\.round\(item\.amount\) > 0\)\.map/);
+  });
+
   it('offers CAH as an explicit expense priority in add and edit dropdowns', () => {
     const priorityOptionsConstant = pageSource.match(/const\s+EXPENSE_PRIORITY_OPTIONS[\s\S]*?=\s*\[([\s\S]*?)\];/);
     const prioritySelectsUsingSharedOptions = pageSource.match(/<Select\s+label="Priority"[\s\S]*?options=\{EXPENSE_PRIORITY_OPTIONS\}/g) ?? [];
