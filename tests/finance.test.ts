@@ -35,6 +35,28 @@ describe('Rex Finance OS finance rules', () => {
     assert.ok(plan.items.some((item) => item.destinationType === 'investment' && item.amount > 0));
   });
 
+  it('keeps Naira as the main allocation amount and includes dollar equivalents for transfers', () => {
+    const state = buildDefaultState();
+    const plan = generateAllocation(state, {
+      source: 'Remote client USD payment',
+      amount: 1000,
+      currency: 'USD',
+      exchangeRate: 1600,
+      date: '2026-06-14',
+    });
+
+    assert.equal(plan.inputAmountNgn, 1600000);
+    assert.equal(plan.inputAmountUsd, 1000);
+    assert.equal(plan.exchangeRate, 1600);
+    assert.ok(plan.items.length > 0);
+    assert.ok(plan.items.every((item) => item.currency === 'NGN'), 'allocation should remain Naira-first');
+    assert.ok(plan.items.every((item) => typeof item.amountUsd === 'number' && item.amountUsd > 0), 'each line should expose a USD equivalent');
+
+    const openAi = plan.items.find((item) => item.destinationName === 'OpenAI Max');
+    assert.ok(openAi, 'OpenAI Max should be part of the split');
+    assert.equal(openAi.amount, 160000);
+    assert.equal(openAi.amountUsd, 100);
+  });
 
   it('includes honest lifestyle and clothing buckets before the move-out push on larger income', () => {
     const state = buildDefaultState();

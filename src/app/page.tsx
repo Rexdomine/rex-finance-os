@@ -64,6 +64,7 @@ type AllocationItem = {
   destinationName: string;
   destinationType: DestinationType;
   amount: number;
+  amountUsd?: number;
   currency: Currency;
   priority: string;
   reason: string;
@@ -72,6 +73,8 @@ type AllocationItem = {
 type AllocationPlan = {
   mode: string;
   inputAmountNgn: number;
+  inputAmountUsd?: number;
+  exchangeRate?: number;
   items: AllocationItem[];
   warnings: string[];
   recommendations: string[];
@@ -162,7 +165,7 @@ const defaultState: AppState = {
 };
 
 function formatMoney(amount: number, currency: Currency = 'NGN') {
-  return new Intl.NumberFormat('en-NG', {
+  return new Intl.NumberFormat(currency === 'USD' ? 'en-US' : 'en-NG', {
     style: 'currency',
     currency,
     maximumFractionDigits: currency === 'NGN' ? 0 : 2,
@@ -173,12 +176,18 @@ function toNgn(amount: number, currency: Currency, exchangeRate: number) {
   return currency === 'USD' ? amount * exchangeRate : amount;
 }
 
+function toUsd(amountNgn: number, exchangeRate: number) {
+  return exchangeRate > 0 ? amountNgn / exchangeRate : 0;
+}
+
 function daysBetween(start: Date, end: Date) {
   return Math.max(1, Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)));
 }
 
 function generateAllocation(state: AppState, income: Income): AllocationPlan {
-  const amountNgn = toNgn(income.amount, income.currency, income.exchangeRate || 1600);
+  const exchangeRate = income.exchangeRate || 1600;
+  const amountNgn = toNgn(income.amount, income.currency, exchangeRate);
+  const inputAmountUsd = toUsd(amountNgn, exchangeRate);
   const items: AllocationItem[] = [];
   const warnings: string[] = [];
   const recommendations: string[] = [];
@@ -193,18 +202,18 @@ function generateAllocation(state: AppState, income: Income): AllocationPlan {
   const addItem = (destinationName: string, destinationType: DestinationType, rawAmount: number, priority: string, reason: string) => {
     const amount = Math.max(0, Math.min(remaining, Math.round(rawAmount)));
     if (amount <= 0) return;
-    items.push({ id: uid(), destinationName, destinationType, amount, currency: 'NGN', priority, reason });
+    items.push({ id: uid(), destinationName, destinationType, amount, amountUsd: toUsd(amount, exchangeRate), currency: 'NGN', priority, reason });
     remaining -= amount;
   };
 
   const mustPayExpenses = state.expenses.filter((expense) => expense.priority === 'must-pay');
-  const monthlyMustPayNgn = mustPayExpenses.reduce((sum, expense) => sum + getMonthlyExpenseAmount(expense, income.exchangeRate || 1600), 0);
+  const monthlyMustPayNgn = mustPayExpenses.reduce((sum, expense) => sum + getMonthlyExpenseAmount(expense, exchangeRate), 0);
   const expenseCap = mode === 'Survival Mode' ? amountNgn * 0.6 : mode === 'Stability Mode' ? amountNgn * 0.35 : Math.min(monthlyMustPayNgn, amountNgn * 0.32);
   let expensePool = expenseCap;
 
   mustPayExpenses.forEach((expense) => {
     if (expensePool <= 0) return;
-    const desired = getMonthlyExpenseAmount(expense, income.exchangeRate || 1600);
+    const desired = getMonthlyExpenseAmount(expense, exchangeRate);
     const allocation = Math.min(desired, expensePool);
     addItem(expense.name, 'expense', allocation, expense.workCritical ? 'work-critical' : 'must-pay', expense.workCritical ? 'Keeps work and income engine running.' : 'Covers core survival spending.');
     expensePool -= allocation;
@@ -224,12 +233,12 @@ function generateAllocation(state: AppState, income: Income): AllocationPlan {
 
   const lifestyleExpense = state.expenses.find((expense) => expense.id === 'lifestyle');
   if (lifestyleExpense) {
-    addItem(lifestyleExpense.name, 'lifestyle', Math.min(getMonthlyExpenseAmount(lifestyleExpense, income.exchangeRate || 1600), mode === 'Survival Mode' ? amountNgn * 0.04 : amountNgn * 0.08), 'honest living cap', 'Planned guilt-free outing money so the budget stays realistic, not punishing.');
+    addItem(lifestyleExpense.name, 'lifestyle', Math.min(getMonthlyExpenseAmount(lifestyleExpense, exchangeRate), mode === 'Survival Mode' ? amountNgn * 0.04 : amountNgn * 0.08), 'honest living cap', 'Planned guilt-free outing money so the budget stays realistic, not punishing.');
   }
 
   const clothingExpense = state.expenses.find((expense) => expense.id === 'clothing');
   if (clothingExpense) {
-    addItem(clothingExpense.name, 'expense', Math.min(getMonthlyExpenseAmount(clothingExpense, income.exchangeRate || 1600), mode === 'Survival Mode' ? amountNgn * 0.02 : amountNgn * 0.04), 'honest clothing cap', 'Allows at least one planned clothing item without turning it into untracked impulse spending.');
+    addItem(clothingExpense.name, 'expense', Math.min(getMonthlyExpenseAmount(clothingExpense, exchangeRate), mode === 'Survival Mode' ? amountNgn * 0.02 : amountNgn * 0.04), 'honest clothing cap', 'Allows at least one planned clothing item without turning it into untracked impulse spending.');
   }
 
   if (activeCriticalGoal) {
@@ -247,7 +256,7 @@ function generateAllocation(state: AppState, income: Income): AllocationPlan {
 
   const importantExpenses = state.expenses.filter((expense) => expense.priority === 'important');
   importantExpenses.forEach((expense) => {
-    addItem(expense.name, 'expense', Math.min(getMonthlyExpenseAmount(expense, income.exchangeRate || 1600), amountNgn * 0.08), 'important cap', 'Useful support category, but capped while critical goals are active.');
+    addItem(expense.name, 'expense', Math.min(getMonthlyExpenseAmount(expense, exchangeRate), amountNgn * 0.08), 'important cap', 'Useful support category, but capped while critical goals are active.');
   });
 
   if (remaining > 0) {
@@ -264,7 +273,7 @@ function generateAllocation(state: AppState, income: Income): AllocationPlan {
   }
   recommendations.push('Review the split before spending. The plan is advice; you can still manually adjust it.');
 
-  return { mode, inputAmountNgn: amountNgn, items, warnings, recommendations };
+  return { mode, inputAmountNgn: amountNgn, inputAmountUsd, exchangeRate, items, warnings, recommendations };
 }
 
 function progress(current: number, target: number) {
@@ -538,6 +547,7 @@ export default function Home() {
                     <div className="rounded-2xl bg-emerald-400/10 p-4">
                       <p className="text-sm text-emerald-200">{state.lastPlan.mode}</p>
                       <p className="text-2xl font-black">{formatMoney(state.lastPlan.inputAmountNgn)}</p>
+                      <p className="mt-1 text-sm text-emerald-100/75">USD equivalent: {formatMoney(state.lastPlan.inputAmountUsd ?? toUsd(state.lastPlan.inputAmountNgn, state.lastPlan.exchangeRate ?? income.exchangeRate), 'USD')}</p>
                     </div>
                     <div className="max-h-[28rem] space-y-3 overflow-auto pr-1">
                       {state.lastPlan.items.map((item) => (
@@ -548,7 +558,10 @@ export default function Home() {
                               <p className="text-xs uppercase tracking-widest text-white/40">{item.destinationType} · {item.priority}</p>
                               <p className="mt-2 text-sm text-white/60">{item.reason}</p>
                             </div>
-                            <p className="whitespace-nowrap font-black text-emerald-300">{formatMoney(item.amount)}</p>
+                            <div className="text-right">
+                              <p className="whitespace-nowrap font-black text-emerald-300">{formatMoney(item.amount)}</p>
+                              <p className="mt-1 whitespace-nowrap text-xs font-semibold text-white/50">≈ {formatMoney(item.amountUsd ?? toUsd(item.amount, state.lastPlan?.exchangeRate ?? income.exchangeRate), 'USD')}</p>
+                            </div>
                           </div>
                         </div>
                       ))}

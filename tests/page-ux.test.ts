@@ -23,4 +23,10 @@ describe('Rex Finance OS page UX contracts', () => {
     assert.doesNotMatch(pageSource, /defaultsToEnsure/);
     assert.doesNotMatch(pageSource, /expenses\.splice/);
   });
+
+  it('shows USD equivalents beside Naira allocation amounts', () => {
+    assert.match(pageSource, /inputAmountUsd/);
+    assert.match(pageSource, /amountUsd/);
+    assert.match(pageSource, /USD equivalent/i);
+  });
 });
