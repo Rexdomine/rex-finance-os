@@ -1,280 +1,33 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { applyAllocationPlanToProgress, checkExpenseDecision, deleteAllocationPlan, getAllocationPlanProgressTotals, getAllocationPlanSignature, getMonthlyExpenseAmount, type ExpenseDecision } from '@/lib/finance';
+import {
+  applyAllocationPlanToProgress,
+  buildDefaultState,
+  checkExpenseDecision,
+  deleteAllocationPlan,
+  formatMoney,
+  generateAllocation,
+  getAllocationPlanProgressTotals,
+  getAllocationPlanSignature,
+  getMonthlyExpenseAmount,
+  toNgn,
+  toUsd,
+  type AppState,
+  type Currency,
+  type ExpenseDecision,
+  type ExpensePriority,
+  type Income,
+  type Priority,
+  type RecurringExpense,
+  type Urgency,
+} from '@/lib/finance';
 
-type Currency = 'NGN' | 'USD';
-type Priority = 'critical' | 'high' | 'medium' | 'low';
-type GoalStatus = 'active' | 'paused' | 'completed' | 'archived';
-type DebtStatus = 'active' | 'paid' | 'paused';
-type Urgency = 'urgent' | 'normal' | 'flexible';
-type ExpensePriority = 'must-pay' | 'important' | 'flexible' | 'pauseable';
-type DestinationType = 'expense' | 'goal' | 'debt' | 'savings' | 'investment' | 'lifestyle' | 'buffer';
-
-type Goal = {
-  id: string;
-  name: string;
-  targetAmount: number;
-  currentAmount: number;
-  currency: Currency;
-  deadline: string;
-  priority: Priority;
-  status: GoalStatus;
-  strategy: 'deadline-based' | 'fixed-percentage' | 'fixed-amount' | 'manual';
-  notes?: string;
-};
-
-type Debt = {
-  id: string;
-  name: string;
-  totalAmount: number;
-  remainingAmount: number;
-  currency: Currency;
-  minimumDueAmount: number;
-  dueDate: string;
-  urgency: Urgency;
-  status: DebtStatus;
-  strategy: 'minimum-first' | 'aggressive-payoff' | 'percentage-income' | 'manual';
-  notes?: string;
-};
-
-type RecurringExpense = {
-  id: string;
-  name: string;
-  amount: number;
-  currency: Currency;
-  frequency: 'weekly' | 'monthly' | 'yearly' | 'one-time';
-  category: string;
-  priority: ExpensePriority;
-  dueDay?: number;
-  workCritical: boolean;
-};
-
-type Income = {
-  source: string;
-  amount: number;
-  currency: Currency;
-  exchangeRate: number;
-  date: string;
-  notes?: string;
-};
-
-type AllocationItem = {
-  id: string;
-  destinationName: string;
-  destinationType: DestinationType;
-  amount: number;
-  amountUsd?: number;
-  currency: Currency;
-  priority: string;
-  reason: string;
-};
-
-type AllocationPlan = {
-  mode: string;
-  inputAmountNgn: number;
-  inputAmountUsd?: number;
-  exchangeRate?: number;
-  items: AllocationItem[];
-  warnings: string[];
-  recommendations: string[];
-};
-
-type AppState = {
-  goals: Goal[];
-  debts: Debt[];
-  expenses: RecurringExpense[];
-  incomes: Income[];
-  lastPlan?: AllocationPlan;
-  appliedPlanSignature?: string;
-};
 
 const uid = () => Math.random().toString(36).slice(2, 10);
 const STORAGE_KEY = 'rex-finance-os-v1';
 
-const defaultState: AppState = {
-  goals: [
-    {
-      id: 'move-out',
-      name: 'Move-Out Fund',
-      targetAmount: 6000000,
-      currentAmount: 1200000,
-      currency: 'NGN',
-      deadline: '2026-08-31',
-      priority: 'critical',
-      status: 'active',
-      strategy: 'deadline-based',
-      notes: 'Rent, agent fee, legal, caution, moving logistics, and part of inverter setup.',
-    },
-    {
-      id: 'emergency',
-      name: 'Emergency Buffer',
-      targetAmount: 300000,
-      currentAmount: 0,
-      currency: 'NGN',
-      deadline: '2026-08-31',
-      priority: 'high',
-      status: 'active',
-      strategy: 'fixed-percentage',
-      notes: 'Protects against irregular income gaps.',
-    },
-    {
-      id: 'investment-seed',
-      name: 'Investment Seed',
-      targetAmount: 250000,
-      currentAmount: 0,
-      currency: 'NGN',
-      deadline: '2026-12-31',
-      priority: 'medium',
-      status: 'active',
-      strategy: 'fixed-percentage',
-      notes: 'Small consistent wealth-building contributions.',
-    },
-  ],
-  debts: [
-    {
-      id: 'bank-debt',
-      name: 'Bank Debt',
-      totalAmount: 359000,
-      remainingAmount: 359000,
-      currency: 'NGN',
-      minimumDueAmount: 180120,
-      dueDate: '2026-06-30',
-      urgency: 'urgent',
-      status: 'active',
-      strategy: 'minimum-first',
-      notes: 'Current month due amount is ₦180,120; remaining can be handled next cycle.',
-    },
-  ],
-  expenses: [
-    { id: 'openai', name: 'OpenAI Max', amount: 100, currency: 'USD', frequency: 'monthly', category: 'Work tools', priority: 'must-pay', workCritical: true },
-    { id: 'wispr', name: 'Wispr Flow', amount: 12, currency: 'USD', frequency: 'monthly', category: 'Work tools', priority: 'must-pay', workCritical: true },
-    { id: 'vps-hosting', name: 'VPS Hosting', amount: 96, currency: 'USD', frequency: 'yearly', category: 'Work tools', priority: 'must-pay', workCritical: true },
-    { id: 'internet', name: 'Internet', amount: 50000, currency: 'NGN', frequency: 'monthly', category: 'Work tools', priority: 'must-pay', workCritical: true },
-    { id: 'food', name: 'Food', amount: 120000, currency: 'NGN', frequency: 'monthly', category: 'Essentials', priority: 'must-pay', workCritical: false },
-    { id: 'electricity', name: 'Electricity', amount: 50000, currency: 'NGN', frequency: 'monthly', category: 'Essentials', priority: 'must-pay', workCritical: true },
-    { id: 'fuel', name: 'Fuel / Transport', amount: 100000, currency: 'NGN', frequency: 'monthly', category: 'Essentials', priority: 'must-pay', workCritical: true },
-    { id: 'phone', name: 'Phone / Data', amount: 30000, currency: 'NGN', frequency: 'monthly', category: 'Essentials', priority: 'must-pay', workCritical: true },
-    { id: 'family', name: 'Family Support Cap', amount: 75000, currency: 'NGN', frequency: 'monthly', category: 'Family', priority: 'important', workCritical: false },
-    { id: 'prime', name: 'Prime Video', amount: 2500, currency: 'NGN', frequency: 'monthly', category: 'Subscriptions', priority: 'flexible', workCritical: false },
-    { id: 'netflix', name: 'Netflix', amount: 8500, currency: 'NGN', frequency: 'monthly', category: 'Subscriptions', priority: 'flexible', workCritical: false },
-    { id: 'lifestyle', name: 'Lifestyle Cap', amount: 50000, currency: 'NGN', frequency: 'monthly', category: 'Lifestyle', priority: 'flexible', workCritical: false },
-    { id: 'clothing', name: 'Clothing Cap', amount: 50000, currency: 'NGN', frequency: 'monthly', category: 'Clothing', priority: 'flexible', workCritical: false },
-  ],
-  incomes: [],
-};
-
-function formatMoney(amount: number, currency: Currency = 'NGN') {
-  return new Intl.NumberFormat(currency === 'USD' ? 'en-US' : 'en-NG', {
-    style: 'currency',
-    currency,
-    maximumFractionDigits: currency === 'NGN' ? 0 : 2,
-  }).format(Math.max(0, amount || 0));
-}
-
-function toNgn(amount: number, currency: Currency, exchangeRate: number) {
-  return currency === 'USD' ? amount * exchangeRate : amount;
-}
-
-function toUsd(amountNgn: number, exchangeRate: number) {
-  return exchangeRate > 0 ? amountNgn / exchangeRate : 0;
-}
-
-function daysBetween(start: Date, end: Date) {
-  return Math.max(1, Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)));
-}
-
-function generateAllocation(state: AppState, income: Income): AllocationPlan {
-  const exchangeRate = income.exchangeRate || 1600;
-  const amountNgn = toNgn(income.amount, income.currency, exchangeRate);
-  const inputAmountUsd = toUsd(amountNgn, exchangeRate);
-  const items: AllocationItem[] = [];
-  const warnings: string[] = [];
-  const recommendations: string[] = [];
-  let remaining = amountNgn;
-
-  const activeCriticalGoal = state.goals
-    .filter((goal) => goal.status === 'active' && goal.priority === 'critical' && goal.targetAmount > goal.currentAmount)
-    .sort((a, b) => new Date(a.deadline).getTime() - new Date(b.deadline).getTime())[0];
-
-  const mode = amountNgn < 500000 ? 'Survival Mode' : amountNgn < 1500000 ? 'Stability Mode' : 'Move-Out Attack Mode';
-
-  const addItem = (destinationName: string, destinationType: DestinationType, rawAmount: number, priority: string, reason: string) => {
-    const amount = Math.max(0, Math.min(remaining, Math.round(rawAmount)));
-    if (amount <= 0) return;
-    items.push({ id: uid(), destinationName, destinationType, amount, amountUsd: toUsd(amount, exchangeRate), currency: 'NGN', priority, reason });
-    remaining -= amount;
-  };
-
-  const mustPayExpenses = state.expenses.filter((expense) => expense.priority === 'must-pay');
-  const monthlyMustPayNgn = mustPayExpenses.reduce((sum, expense) => sum + getMonthlyExpenseAmount(expense, exchangeRate), 0);
-  const expenseCap = mode === 'Survival Mode' ? amountNgn * 0.6 : mode === 'Stability Mode' ? amountNgn * 0.35 : Math.min(monthlyMustPayNgn, amountNgn * 0.32);
-  let expensePool = expenseCap;
-
-  mustPayExpenses.forEach((expense) => {
-    if (expensePool <= 0) return;
-    const desired = getMonthlyExpenseAmount(expense, exchangeRate);
-    const allocation = Math.min(desired, expensePool);
-    addItem(expense.name, 'expense', allocation, expense.workCritical ? 'work-critical' : 'must-pay', expense.workCritical ? 'Keeps work and income engine running.' : 'Covers core survival spending.');
-    expensePool -= allocation;
-  });
-
-  const urgentDebts = state.debts.filter((debt) => debt.status === 'active' && debt.remainingAmount > 0 && debt.urgency === 'urgent');
-  urgentDebts.forEach((debt) => {
-    const base = debt.minimumDueAmount || Math.min(debt.remainingAmount, amountNgn * 0.15);
-    const cap = mode === 'Survival Mode' ? amountNgn * 0.15 : mode === 'Stability Mode' ? amountNgn * 0.15 : Math.min(base, amountNgn * 0.2);
-    addItem(debt.name, 'debt', Math.min(base, debt.remainingAmount, cap), 'urgent debt', 'Debt pressure comes before lifestyle and most flexible spending.');
-  });
-
-  const savingsRate = mode === 'Survival Mode' ? 0.05 : mode === 'Stability Mode' ? 0.07 : 0.08;
-  const investmentRate = mode === 'Survival Mode' ? 0.03 : mode === 'Stability Mode' ? 0.05 : 0.05;
-  addItem('Emergency Savings', 'savings', Math.max(amountNgn * savingsRate, amountNgn < 100000 ? 1000 : 0), 'protective', 'Save something every time money enters, even if small.');
-  addItem('Investment Seed', 'investment', Math.max(amountNgn * investmentRate, amountNgn < 100000 ? 1000 : 0), 'wealth-building', 'Small consistent investing builds the habit before wealth scales.');
-
-  const lifestyleExpense = state.expenses.find((expense) => expense.id === 'lifestyle');
-  if (lifestyleExpense) {
-    addItem(lifestyleExpense.name, 'lifestyle', Math.min(getMonthlyExpenseAmount(lifestyleExpense, exchangeRate), mode === 'Survival Mode' ? amountNgn * 0.04 : amountNgn * 0.08), 'honest living cap', 'Planned guilt-free outing money so the budget stays realistic, not punishing.');
-  }
-
-  const clothingExpense = state.expenses.find((expense) => expense.id === 'clothing');
-  if (clothingExpense) {
-    addItem(clothingExpense.name, 'expense', Math.min(getMonthlyExpenseAmount(clothingExpense, exchangeRate), mode === 'Survival Mode' ? amountNgn * 0.02 : amountNgn * 0.04), 'honest clothing cap', 'Allows at least one planned clothing item without turning it into untracked impulse spending.');
-  }
-
-  if (activeCriticalGoal) {
-    const goalRemaining = activeCriticalGoal.targetAmount - activeCriticalGoal.currentAmount;
-    const targetDate = new Date(activeCriticalGoal.deadline + 'T23:59:59');
-    const weeksLeft = daysBetween(new Date(), targetDate) / 7;
-    const weeklyNeed = goalRemaining / Math.max(1, weeksLeft);
-    const goalRate = mode === 'Survival Mode' ? 0.1 : mode === 'Stability Mode' ? 0.3 : 0.65;
-    const goalAllocation = Math.min(goalRemaining, Math.max(amountNgn * goalRate, mode === 'Move-Out Attack Mode' ? Math.min(weeklyNeed, remaining) : 0));
-    addItem(activeCriticalGoal.name, 'goal', goalAllocation, 'critical goal', `Deadline-based push. Current weekly target is about ${formatMoney(weeklyNeed)}.`);
-    if (remaining < weeklyNeed && mode !== 'Move-Out Attack Mode') {
-      warnings.push(`${activeCriticalGoal.name} needs about ${formatMoney(weeklyNeed)} weekly. This income may not fully keep pace.`);
-    }
-  }
-
-  const importantExpenses = state.expenses.filter((expense) => expense.priority === 'important');
-  importantExpenses.forEach((expense) => {
-    addItem(expense.name, 'expense', Math.min(getMonthlyExpenseAmount(expense, exchangeRate), amountNgn * 0.08), 'important cap', 'Useful support category, but capped while critical goals are active.');
-  });
-
-  if (remaining > 0) {
-    const destination = activeCriticalGoal?.name ?? 'Buffer';
-    addItem(destination, activeCriticalGoal ? 'goal' : 'buffer', remaining, activeCriticalGoal ? 'extra goal push' : 'buffer', activeCriticalGoal ? 'Extra unassigned cash should accelerate the critical goal.' : 'Keep unassigned cash as buffer.');
-  }
-
-  if (amountNgn < monthlyMustPayNgn) {
-    warnings.push(`This income is below your estimated must-pay monthly expenses of ${formatMoney(monthlyMustPayNgn)}.`);
-  }
-  if (activeCriticalGoal) {
-    const remainingAfterPlan = Math.max(0, activeCriticalGoal.targetAmount - activeCriticalGoal.currentAmount - items.filter((item) => item.destinationName === activeCriticalGoal.name).reduce((sum, item) => sum + item.amount, 0));
-    recommendations.push(`${activeCriticalGoal.name} would have ${formatMoney(remainingAfterPlan)} left after this allocation.`);
-  }
-  recommendations.push('Review the split before spending. The plan is advice; you can still manually adjust it.');
-
-  return { mode, inputAmountNgn: amountNgn, inputAmountUsd, exchangeRate, items, warnings, recommendations };
-}
+const getDefaultState = () => buildDefaultState();
 
 function progress(current: number, target: number) {
   return Math.min(100, Math.round((current / Math.max(target, 1)) * 100));
@@ -286,9 +39,9 @@ function migrateState(stored: AppState): AppState {
 
 export default function Home() {
   const [state, setState] = useState<AppState>(() => {
-    if (typeof window === 'undefined') return defaultState;
+    if (typeof window === 'undefined') return getDefaultState();
     const stored = window.localStorage.getItem(STORAGE_KEY);
-    return stored ? migrateState(JSON.parse(stored)) : defaultState;
+    return stored ? migrateState(JSON.parse(stored)) : getDefaultState();
   });
   const [activeTab, setActiveTab] = useState<'dashboard' | 'income' | 'checker' | 'goals' | 'debts' | 'expenses'>('dashboard');
   const [income, setIncome] = useState<Income>({ source: 'Freelance / Remote work', amount: 850000, currency: 'NGN', exchangeRate: 1600, date: new Date().toISOString().slice(0, 10), notes: '' });
@@ -486,7 +239,7 @@ export default function Home() {
     }));
   };
 
-  const resetData = () => setState(defaultState);
+  const resetData = () => setState(getDefaultState());
 
   return (
     <main className="min-h-screen bg-[#07130f] text-white">
