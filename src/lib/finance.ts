@@ -290,7 +290,7 @@ export function generateAllocation(state: AppState, income: Income): AllocationP
       .reduce((sum, expense) => sum + getMonthlyExpenseAmount(expense, exchangeRate) * getCashAtHandFundingRate(mode), 0),
   );
   const addItem = (destinationName: string, destinationType: DestinationType, rawAmount: number, priority: string, reason: string, expenseId?: string) => {
-    const amount = Math.round(Math.max(0, Math.min(remaining, rawAmount)));
+    const amount = Math.floor(Math.max(0, Math.min(remaining, rawAmount)));
     if (amount <= 0) return 0;
     items.push({ id: uid(), destinationName, destinationType, amount, amountUsd: toUsd(amount, exchangeRate), currency: 'NGN', priority, reason });
     if (expenseId) fundedExpenseAmounts.set(expenseId, (fundedExpenseAmounts.get(expenseId) ?? 0) + amount);
