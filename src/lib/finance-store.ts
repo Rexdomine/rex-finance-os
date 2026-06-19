@@ -36,6 +36,9 @@ export type FinanceStore = {
   close: () => Promise<void>;
 };
 
+/**
+ * Resolves the store connection target from explicit options, environment, or local fallback.
+ */
 function resolveConfig(options: FinanceStoreOptions = {}): { mode: StoreMode; config: Config } {
   const tursoDatabaseUrl = options.tursoDatabaseUrl ?? process.env.TURSO_DATABASE_URL;
   const tursoAuthToken = options.tursoAuthToken ?? process.env.TURSO_AUTH_TOKEN;
@@ -49,11 +52,17 @@ function resolveConfig(options: FinanceStoreOptions = {}): { mode: StoreMode; co
   return { mode: 'local-libsql', config: { url: `file:${dbPath}` } };
 }
 
+/**
+ * Parses a JSON payload column from a libSQL row.
+ */
 function payload<T>(row: Row | undefined): T | undefined {
   if (!row) return undefined;
   return JSON.parse(String(row.payload)) as T;
 }
 
+/**
+ * Ensures all normalized finance tables exist before reads or writes run.
+ */
 async function configureSchema(client: Client) {
   await client.executeMultiple(`
     PRAGMA foreign_keys = ON;
@@ -196,6 +205,9 @@ function itemStatement(planId: number, item: AllocationItem): InStatement {
   };
 }
 
+/**
+ * Creates a libSQL-backed finance store, using Turso when configured and local SQLite otherwise.
+ */
 export async function createFinanceStore(options: FinanceStoreOptions = {}): Promise<FinanceStore> {
   const { mode, config } = resolveConfig(options);
   const client = (options.clientFactory ?? createClient)(config);
@@ -254,6 +266,9 @@ export async function createFinanceStore(options: FinanceStoreOptions = {}): Pro
 
 let singletonStore: Promise<FinanceStore> | null = null;
 
+/**
+ * Returns the process-level singleton finance store used by Next.js API routes.
+ */
 export function getFinanceStore() {
   singletonStore ??= createFinanceStore();
   return singletonStore;

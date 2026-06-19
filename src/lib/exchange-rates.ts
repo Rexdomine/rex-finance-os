@@ -12,6 +12,9 @@ type OpenExchangeRateResponse = {
 
 export type LatestUsdToNgnRate = Pick<ExchangeRateSettings, 'usdToNgn' | 'source' | 'provider' | 'updatedAt'>;
 
+/**
+ * Fetches and validates the latest USD to NGN rate from the free open ExchangeRate-API endpoint.
+ */
 export async function fetchLatestUsdToNgnRate(fetcher: typeof fetch = fetch): Promise<LatestUsdToNgnRate> {
   const response = await fetcher(OPEN_ER_API_URL, {
     cache: 'no-store',
@@ -41,6 +44,9 @@ export async function fetchLatestUsdToNgnRate(fetcher: typeof fetch = fetch): Pr
   };
 }
 
+/**
+ * Converts a normalized provider rate into persisted app exchange-rate settings.
+ */
 export function buildRateSettingsUpdate(rate: LatestUsdToNgnRate): ExchangeRateSettings {
   return {
     usdToNgn: rate.usdToNgn || DEFAULT_USD_TO_NGN_RATE,

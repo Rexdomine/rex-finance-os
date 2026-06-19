@@ -31,18 +31,30 @@ const STORAGE_KEY = 'rex-finance-os-v1';
 
 const getDefaultState = () => buildDefaultState();
 
+/**
+ * Formats exchange rates for compact dashboard and settings display.
+ */
 function formatRate(rate: number) {
   return new Intl.NumberFormat('en-NG', { maximumFractionDigits: 2 }).format(rate);
 }
 
+/**
+ * Calculates bounded percentage progress toward a goal target.
+ */
 function progress(current: number, target: number) {
   return Math.min(100, Math.round((current / Math.max(target, 1)) * 100));
 }
 
+/**
+ * Applies domain migration to browser/server-loaded state before rendering.
+ */
 function migrateState(stored: Partial<AppState>): AppState {
   return migrateAppState(stored);
 }
 
+/**
+ * Main Rex Finance OS dashboard and management screen.
+ */
 export default function Home() {
   const [state, setState] = useState<AppState>(() => {
     if (typeof window === 'undefined') return getDefaultState();
@@ -666,22 +678,37 @@ export default function Home() {
   );
 }
 
+/**
+ * Displays a compact dashboard metric card.
+ */
 function Metric({ title, value, note }: { title: string; value: string; note: string }) {
   return <div className="rounded-3xl border border-white/10 bg-white/[0.06] p-5"><p className="text-sm text-white/50">{title}</p><p className="mt-2 text-2xl font-black text-emerald-300">{value}</p><p className="mt-1 text-xs text-white/40">{note}</p></div>;
 }
 
+/**
+ * Provides the shared visual container for tab content.
+ */
 function Panel({ title, children }: { title: string; children: React.ReactNode }) {
   return <section className="rounded-[1.75rem] border border-white/10 bg-slate-950/80 p-5 shadow-xl shadow-black/20"><h2 className="mb-4 text-2xl font-black">{title}</h2>{children}</section>;
 }
 
+/**
+ * Shared labeled input control.
+ */
 function Input({ label, value, onChange, type = 'text' }: { label: string; value: string; onChange: (value: string) => void; type?: string }) {
   return <label className="block"><span className="mb-1 block text-xs font-bold uppercase tracking-widest text-white/40">{label}</span><input type={type} value={value} onChange={(event) => onChange(event.target.value)} className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-3 text-white outline-none focus:border-emerald-300" /></label>;
 }
 
+/**
+ * Shared labeled select control.
+ */
 function Select({ label, value, onChange, options }: { label: string; value: string; onChange: (value: string) => void; options: string[] }) {
   return <label className="block"><span className="mb-1 block text-xs font-bold uppercase tracking-widest text-white/40">{label}</span><select value={value} onChange={(event) => onChange(event.target.value)} className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-3 text-white outline-none focus:border-emerald-300">{options.map((option) => <option key={option} value={option}>{option}</option>)}</select></label>;
 }
 
+/**
+ * Renders simple text rows for management lists.
+ */
 function List({ items }: { items: string[] }) {
   return <div className="mt-5 space-y-2">{items.map((item) => <div key={item} className="rounded-xl bg-white/5 p-3 text-sm text-white/75">{item}</div>)}</div>;
 }

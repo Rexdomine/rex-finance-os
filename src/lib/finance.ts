@@ -22,16 +22,25 @@ export type ExpenseDecision = { verdict: DecisionVerdict; summary: string; amoun
 const uid = () => Math.random().toString(36).slice(2, 10);
 export const DEFAULT_USD_TO_NGN_RATE = 1600;
 
+/**
+ * Builds default USD to NGN exchange-rate settings for fresh or legacy app state.
+ */
 export function buildDefaultExchangeRateSettings(): ExchangeRateSettings {
   return { usdToNgn: DEFAULT_USD_TO_NGN_RATE, source: 'manual', autoRefresh: true };
 }
 
+/**
+ * Returns the active managed USD to NGN rate, falling back safely when state is incomplete.
+ */
 export function getUsdToNgnRate(stateOrSettings?: Pick<AppState, 'exchangeRateSettings'> | ExchangeRateSettings) {
   const settings = stateOrSettings && 'exchangeRateSettings' in stateOrSettings ? stateOrSettings.exchangeRateSettings : stateOrSettings;
   const rate = Number(settings?.usdToNgn);
   return Number.isFinite(rate) && rate > 0 ? rate : DEFAULT_USD_TO_NGN_RATE;
 }
 
+/**
+ * Upgrades partial or legacy persisted app state into the current complete AppState shape.
+ */
 export function migrateAppState(stored: Partial<AppState>): AppState {
   const defaults = buildDefaultState();
   const legacyRate = Number(stored.exchangeRateSettings?.usdToNgn ?? stored.lastPlan?.exchangeRate ?? stored.incomes?.find((income) => income.exchangeRate > 0)?.exchangeRate ?? DEFAULT_USD_TO_NGN_RATE);
@@ -52,6 +61,9 @@ export function migrateAppState(stored: Partial<AppState>): AppState {
   };
 }
 
+/**
+ * Seeds the default finance state used for first-run/demo data.
+ */
 export function buildDefaultState(): AppState {
   return {
     goals: [
@@ -82,18 +94,30 @@ export function buildDefaultState(): AppState {
   };
 }
 
+/**
+ * Formats an amount as NGN or USD currency for UI display.
+ */
 export function formatMoney(amount: number, currency: Currency = 'NGN') {
   return new Intl.NumberFormat(currency === 'USD' ? 'en-US' : 'en-NG', { style: 'currency', currency, maximumFractionDigits: currency === 'NGN' ? 0 : 2 }).format(Math.max(0, amount || 0));
 }
 
+/**
+ * Converts an amount from its source currency into NGN using the provided USD rate.
+ */
 export function toNgn(amount: number, currency: Currency, exchangeRate: number) {
   return currency === 'USD' ? amount * exchangeRate : amount;
 }
 
+/**
+ * Converts a NGN amount into a USD equivalent using the provided exchange rate.
+ */
 export function toUsd(amountNgn: number, exchangeRate: number) {
   return exchangeRate > 0 ? amountNgn / exchangeRate : 0;
 }
 
+/**
+ * Normalizes recurring expenses into a monthly NGN planning amount.
+ */
 export function getMonthlyExpenseAmount(expense: RecurringExpense, exchangeRate: number) {
   const baseNgn = toNgn(expense.amount, expense.currency, exchangeRate);
   if (expense.frequency === 'yearly') return baseNgn / 12;
@@ -103,6 +127,9 @@ export function getMonthlyExpenseAmount(expense: RecurringExpense, exchangeRate:
 
 function daysBetween(start: Date, end: Date) { return Math.max(1, Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24))); }
 
+/**
+ * Appends missing seeded recurring expenses without altering existing expense rows.
+ */
 export function ensureDefaultRecurringExpenses(state: AppState): AppState {
   const defaults = buildDefaultState().expenses;
   const expenses = [...state.expenses];
@@ -116,6 +143,9 @@ export function ensureDefaultRecurringExpenses(state: AppState): AppState {
   return { ...state, expenses };
 }
 
+/**
+ * Generates a Naira-first allocation plan with USD equivalents for the provided income.
+ */
 export function generateAllocation(state: AppState, income: Income): AllocationPlan {
   const exchangeRate = income.exchangeRate || DEFAULT_USD_TO_NGN_RATE;
   const amountNgn = toNgn(income.amount, income.currency, exchangeRate);
@@ -175,6 +205,9 @@ export function generateAllocation(state: AppState, income: Income): AllocationP
   return { mode, inputAmountNgn: amountNgn, inputAmountUsd, exchangeRate, items, warnings, recommendations };
 }
 
+/**
+ * Applies the current allocation plan to goal and debt progress exactly once.
+ */
 export function applyAllocationPlanToProgress(state: AppState): AppState {
   if (!state.lastPlan) return state;
 
@@ -200,6 +233,9 @@ export function applyAllocationPlanToProgress(state: AppState): AppState {
   return { ...state, goals, debts, appliedPlanSignature: signature };
 }
 
+/**
+ * Creates a stable signature for allocation progress items to prevent double-application.
+ */
 export function getAllocationPlanSignature(plan?: AllocationPlan) {
   if (!plan) return '';
   return JSON.stringify({
@@ -211,6 +247,9 @@ export function getAllocationPlanSignature(plan?: AllocationPlan) {
   });
 }
 
+/**
+ * Totals goal and debt progress represented by an allocation plan.
+ */
 export function getAllocationPlanProgressTotals(plan?: AllocationPlan) {
   const items = plan?.items ?? [];
   return {
@@ -219,6 +258,9 @@ export function getAllocationPlanProgressTotals(plan?: AllocationPlan) {
   };
 }
 
+/**
+ * Removes the visible allocation plan and reverses its applied progress when necessary.
+ */
 export function deleteAllocationPlan(state: AppState): AppState {
   const shouldReverseAppliedProgress = Boolean(
     state.lastPlan && state.appliedPlanSignature === getAllocationPlanSignature(state.lastPlan),
@@ -263,6 +305,9 @@ export function deleteAllocationPlan(state: AppState): AppState {
   return next;
 }
 
+/**
+ * Evaluates a planned expense against goals, debt pressure, and work-critical rules.
+ */
 export function checkExpenseDecision(state: AppState, input: ExpenseDecisionInput): ExpenseDecision {
   const amountNgn = toNgn(input.amount, input.currency, input.exchangeRate || DEFAULT_USD_TO_NGN_RATE);
   const category = input.category.toLowerCase();

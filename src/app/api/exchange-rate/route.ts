@@ -3,6 +3,9 @@ import { fetchLatestUsdToNgnRate } from '@/lib/exchange-rates';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
+/**
+ * Serves the latest normalized USD to NGN rate to the client settings panel.
+ */
 export async function GET() {
   try {
     const rate = await fetchLatestUsdToNgnRate();
