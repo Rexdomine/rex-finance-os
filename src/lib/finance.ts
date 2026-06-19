@@ -11,13 +11,46 @@ export type Goal = { id: string; name: string; targetAmount: number; currentAmou
 export type Debt = { id: string; name: string; totalAmount: number; remainingAmount: number; currency: Currency; minimumDueAmount: number; dueDate: string; urgency: Urgency; status: DebtStatus; strategy: 'minimum-first' | 'aggressive-payoff' | 'percentage-income' | 'manual'; notes?: string; };
 export type RecurringExpense = { id: string; name: string; amount: number; currency: Currency; frequency: 'weekly' | 'monthly' | 'yearly' | 'one-time'; category: string; priority: ExpensePriority; dueDay?: number; workCritical: boolean; };
 export type Income = { source: string; amount: number; currency: Currency; exchangeRate: number; date: string; notes?: string; };
+export type ExchangeRateSource = 'manual' | 'open-er-api';
+export type ExchangeRateSettings = { usdToNgn: number; source: ExchangeRateSource; provider?: string; updatedAt?: string; autoRefresh: boolean; error?: string; };
 export type AllocationItem = { id: string; destinationName: string; destinationType: DestinationType; amount: number; amountUsd?: number; currency: Currency; priority: string; reason: string; };
 export type AllocationPlan = { mode: string; inputAmountNgn: number; inputAmountUsd?: number; exchangeRate?: number; items: AllocationItem[]; warnings: string[]; recommendations: string[]; };
-export type AppState = { goals: Goal[]; debts: Debt[]; expenses: RecurringExpense[]; incomes: Income[]; lastPlan?: AllocationPlan; appliedPlanSignature?: string; };
+export type AppState = { goals: Goal[]; debts: Debt[]; expenses: RecurringExpense[]; incomes: Income[]; exchangeRateSettings: ExchangeRateSettings; lastPlan?: AllocationPlan; appliedPlanSignature?: string; };
 export type ExpenseDecisionInput = { name: string; amount: number; currency: Currency; category: string; exchangeRate: number; date: string; };
 export type ExpenseDecision = { verdict: DecisionVerdict; summary: string; amountNgn: number; goalImpactAmount: number; reasons: string[]; recommendations: string[]; };
 
 const uid = () => Math.random().toString(36).slice(2, 10);
+export const DEFAULT_USD_TO_NGN_RATE = 1600;
+
+export function buildDefaultExchangeRateSettings(): ExchangeRateSettings {
+  return { usdToNgn: DEFAULT_USD_TO_NGN_RATE, source: 'manual', autoRefresh: true };
+}
+
+export function getUsdToNgnRate(stateOrSettings?: Pick<AppState, 'exchangeRateSettings'> | ExchangeRateSettings) {
+  const settings = stateOrSettings && 'exchangeRateSettings' in stateOrSettings ? stateOrSettings.exchangeRateSettings : stateOrSettings;
+  const rate = Number(settings?.usdToNgn);
+  return Number.isFinite(rate) && rate > 0 ? rate : DEFAULT_USD_TO_NGN_RATE;
+}
+
+export function migrateAppState(stored: Partial<AppState>): AppState {
+  const defaults = buildDefaultState();
+  const legacyRate = Number(stored.exchangeRateSettings?.usdToNgn ?? stored.lastPlan?.exchangeRate ?? stored.incomes?.find((income) => income.exchangeRate > 0)?.exchangeRate ?? DEFAULT_USD_TO_NGN_RATE);
+  const exchangeRateSettings: ExchangeRateSettings = {
+    ...buildDefaultExchangeRateSettings(),
+    ...stored.exchangeRateSettings,
+    usdToNgn: Number.isFinite(legacyRate) && legacyRate > 0 ? legacyRate : DEFAULT_USD_TO_NGN_RATE,
+  };
+
+  return {
+    ...defaults,
+    ...stored,
+    goals: Array.isArray(stored.goals) ? stored.goals : defaults.goals,
+    debts: Array.isArray(stored.debts) ? stored.debts : defaults.debts,
+    expenses: Array.isArray(stored.expenses) ? stored.expenses : defaults.expenses,
+    incomes: Array.isArray(stored.incomes) ? stored.incomes : defaults.incomes,
+    exchangeRateSettings,
+  };
+}
 
 export function buildDefaultState(): AppState {
   return {
@@ -45,6 +78,7 @@ export function buildDefaultState(): AppState {
       { id: 'clothing', name: 'Clothing Cap', amount: 50000, currency: 'NGN', frequency: 'monthly', category: 'Clothing', priority: 'flexible', workCritical: false },
     ],
     incomes: [],
+    exchangeRateSettings: buildDefaultExchangeRateSettings(),
   };
 }
 
@@ -83,7 +117,7 @@ export function ensureDefaultRecurringExpenses(state: AppState): AppState {
 }
 
 export function generateAllocation(state: AppState, income: Income): AllocationPlan {
-  const exchangeRate = income.exchangeRate || 1600;
+  const exchangeRate = income.exchangeRate || DEFAULT_USD_TO_NGN_RATE;
   const amountNgn = toNgn(income.amount, income.currency, exchangeRate);
   const inputAmountUsd = toUsd(amountNgn, exchangeRate);
   const items: AllocationItem[] = [];
@@ -213,7 +247,7 @@ export function deleteAllocationPlan(state: AppState): AppState {
   let removedLinkedIncome = false;
   const incomes = state.lastPlan
     ? state.incomes.filter((income) => {
-      const incomeAmountNgn = Math.round(toNgn(income.amount, income.currency, income.exchangeRate || 1600));
+      const incomeAmountNgn = Math.round(toNgn(income.amount, income.currency, income.exchangeRate || DEFAULT_USD_TO_NGN_RATE));
       const planAmountNgn = Math.round(state.lastPlan?.inputAmountNgn ?? 0);
       if (!removedLinkedIncome && incomeAmountNgn === planAmountNgn) {
         removedLinkedIncome = true;
@@ -230,7 +264,7 @@ export function deleteAllocationPlan(state: AppState): AppState {
 }
 
 export function checkExpenseDecision(state: AppState, input: ExpenseDecisionInput): ExpenseDecision {
-  const amountNgn = toNgn(input.amount, input.currency, input.exchangeRate || 1600);
+  const amountNgn = toNgn(input.amount, input.currency, input.exchangeRate || DEFAULT_USD_TO_NGN_RATE);
   const category = input.category.toLowerCase();
   const name = input.name.toLowerCase();
   const reasons: string[] = [];

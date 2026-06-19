@@ -6,10 +6,44 @@ import {
   deleteAllocationPlan,
   generateAllocation,
   getMonthlyExpenseAmount,
+  getUsdToNgnRate,
+  migrateAppState,
   checkExpenseDecision,
 } from '../src/lib/finance';
 
 describe('Rex Finance OS finance rules', () => {
+
+  it('stores managed exchange-rate settings and migrates legacy state to the default fallback', () => {
+    const state = buildDefaultState();
+
+    assert.equal(state.exchangeRateSettings.usdToNgn, 1600);
+    assert.equal(getUsdToNgnRate(state), 1600);
+
+    const legacyState = { ...state } as Partial<typeof state>;
+    delete legacyState.exchangeRateSettings;
+
+    const migrated = migrateAppState(legacyState);
+    assert.equal(migrated.exchangeRateSettings.usdToNgn, 1600);
+    assert.equal(migrated.exchangeRateSettings.source, 'manual');
+  });
+
+  it('uses the managed exchange rate for USD expense monthly planning', () => {
+    const state = {
+      ...buildDefaultState(),
+      exchangeRateSettings: {
+        usdToNgn: 1400,
+        source: 'open-er-api' as const,
+        provider: 'https://www.exchangerate-api.com',
+        updatedAt: 'Fri, 19 Jun 2026 00:02:32 +0000',
+        autoRefresh: true,
+      },
+    };
+    const openAi = state.expenses.find((expense) => expense.id === 'openai');
+
+    assert.ok(openAi);
+    assert.equal(getMonthlyExpenseAmount(openAi, getUsdToNgnRate(state)), 140000);
+  });
+
   it('normalizes yearly VPS hosting paid at $8/month into annual and monthly NGN cost', () => {
     const state = buildDefaultState();
     const vps = state.expenses.find((expense) => expense.id === 'vps-hosting');

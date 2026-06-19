@@ -29,4 +29,12 @@ describe('Rex Finance OS page UX contracts', () => {
     assert.match(pageSource, /amountUsd/);
     assert.match(pageSource, /USD equivalent/i);
   });
+
+  it('exposes a settings section for managed USD to NGN rates instead of hardcoded dashboard copy', () => {
+    assert.match(pageSource, /settings/i);
+    assert.match(pageSource, /Exchange rate settings/i);
+    assert.match(pageSource, /Refresh live USD\/NGN rate/i);
+    assert.match(pageSource, /exchangeRateSettings/);
+    assert.doesNotMatch(pageSource, /Includes USD tools @ ₦1,600\/\$/);
+  });
 });

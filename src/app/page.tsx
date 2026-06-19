@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   applyAllocationPlanToProgress,
   buildDefaultState,
@@ -8,9 +8,11 @@ import {
   deleteAllocationPlan,
   formatMoney,
   generateAllocation,
+  getUsdToNgnRate,
   getAllocationPlanProgressTotals,
   getAllocationPlanSignature,
   getMonthlyExpenseAmount,
+  migrateAppState,
   toNgn,
   toUsd,
   type AppState,
@@ -29,12 +31,16 @@ const STORAGE_KEY = 'rex-finance-os-v1';
 
 const getDefaultState = () => buildDefaultState();
 
+function formatRate(rate: number) {
+  return new Intl.NumberFormat('en-NG', { maximumFractionDigits: 2 }).format(rate);
+}
+
 function progress(current: number, target: number) {
   return Math.min(100, Math.round((current / Math.max(target, 1)) * 100));
 }
 
-function migrateState(stored: AppState): AppState {
-  return stored;
+function migrateState(stored: Partial<AppState>): AppState {
+  return migrateAppState(stored);
 }
 
 export default function Home() {
@@ -43,12 +49,12 @@ export default function Home() {
     const stored = window.localStorage.getItem(STORAGE_KEY);
     return stored ? migrateState(JSON.parse(stored)) : getDefaultState();
   });
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'income' | 'checker' | 'goals' | 'debts' | 'expenses'>('dashboard');
-  const [income, setIncome] = useState<Income>({ source: 'Freelance / Remote work', amount: 850000, currency: 'NGN', exchangeRate: 1600, date: new Date().toISOString().slice(0, 10), notes: '' });
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'income' | 'checker' | 'goals' | 'debts' | 'expenses' | 'settings'>('dashboard');
+  const [income, setIncome] = useState<Income>({ source: 'Freelance / Remote work', amount: 850000, currency: 'NGN', exchangeRate: getUsdToNgnRate(getDefaultState()), date: new Date().toISOString().slice(0, 10), notes: '' });
   const [goalDraft, setGoalDraft] = useState({ name: '', targetAmount: '', currentAmount: '0', deadline: '', priority: 'medium' as Priority });
   const [debtDraft, setDebtDraft] = useState({ name: '', totalAmount: '', remainingAmount: '', minimumDueAmount: '', dueDate: '', urgency: 'normal' as Urgency });
   const [expenseDraft, setExpenseDraft] = useState({ name: '', amount: '', currency: 'NGN' as Currency, frequency: 'monthly' as RecurringExpense['frequency'], category: 'Essentials', priority: 'important' as ExpensePriority, workCritical: false });
-  const [decisionDraft, setDecisionDraft] = useState({ name: 'Sneakers', amount: '120000', currency: 'NGN' as Currency, category: 'Clothing', exchangeRate: '1600' });
+  const [decisionDraft, setDecisionDraft] = useState({ name: 'Sneakers', amount: '120000', currency: 'NGN' as Currency, category: 'Clothing', exchangeRate: String(getUsdToNgnRate(getDefaultState())) });
   const [expenseDecision, setExpenseDecision] = useState<ExpenseDecision | null>(null);
   const [expenseStatus, setExpenseStatus] = useState<string | null>(null);
   const [expenseStatusTone, setExpenseStatusTone] = useState<'success' | 'warning'>('success');
@@ -58,6 +64,11 @@ export default function Home() {
   const [hasLoadedServerState, setHasLoadedServerState] = useState(false);
   const [syncStatus, setSyncStatus] = useState('Loading finance ledger...');
   const [ledgerMode, setLedgerMode] = useState<'turso-libsql' | 'local-libsql' | null>(null);
+  const [rateStatus, setRateStatus] = useState<string | null>(null);
+  const [isRefreshingRate, setIsRefreshingRate] = useState(false);
+  const hasStartedAutoRateRefresh = useRef(false);
+
+  const usdToNgnRate = getUsdToNgnRate(state);
 
   useEffect(() => {
     let active = true;
@@ -68,12 +79,20 @@ export default function Home() {
         if (!response.ok) throw new Error('SQLite API unavailable');
         const data = (await response.json()) as { state: AppState; mode?: 'turso-libsql' | 'local-libsql' };
         if (!active) return;
-        setState(migrateState(data.state));
+        const migrated = migrateState(data.state);
+        setState(migrated);
+        setIncome((previous) => ({ ...previous, exchangeRate: getUsdToNgnRate(migrated) }));
+        setDecisionDraft((previous) => ({ ...previous, exchangeRate: String(getUsdToNgnRate(migrated)) }));
         setLedgerMode(data.mode ?? null);
         setSyncStatus(data.mode === 'turso-libsql' ? 'Turso cloud ledger connected' : 'Local SQLite ledger connected');
       } catch {
         const stored = window.localStorage.getItem(STORAGE_KEY);
-        if (stored && active) setState(migrateState(JSON.parse(stored)));
+        if (stored && active) {
+          const migrated = migrateState(JSON.parse(stored));
+          setState(migrated);
+          setIncome((previous) => ({ ...previous, exchangeRate: getUsdToNgnRate(migrated) }));
+          setDecisionDraft((previous) => ({ ...previous, exchangeRate: String(getUsdToNgnRate(migrated)) }));
+        }
         if (active) setSyncStatus('SQLite sync unavailable — using browser fallback');
       } finally {
         if (active) setHasLoadedServerState(true);
@@ -118,18 +137,19 @@ export default function Home() {
     const activeDebts = state.debts.filter((debt) => debt.status === 'active');
     const goalRemaining = activeGoals.reduce((sum, goal) => sum + Math.max(0, goal.targetAmount - goal.currentAmount), 0);
     const debtRemaining = activeDebts.reduce((sum, debt) => sum + Math.max(0, debt.remainingAmount), 0);
-    const monthlyExpenses = state.expenses.reduce((sum, expense) => sum + getMonthlyExpenseAmount(expense, 1600), 0);
+    const monthlyExpenses = state.expenses.reduce((sum, expense) => sum + getMonthlyExpenseAmount(expense, usdToNgnRate), 0);
     const totalIncome = state.incomes.reduce((sum, item) => sum + toNgn(item.amount, item.currency, item.exchangeRate), 0);
     return { activeGoals, activeDebts, goalRemaining, debtRemaining, monthlyExpenses, totalIncome };
-  }, [state]);
+  }, [state, usdToNgnRate]);
 
   const currentPlanSignature = getAllocationPlanSignature(state.lastPlan);
   const isLastPlanApplied = Boolean(state.lastPlan && state.appliedPlanSignature === currentPlanSignature);
   const deletePlanImpact = getAllocationPlanProgressTotals(state.lastPlan);
 
   const runAllocation = () => {
-    const plan = generateAllocation(state, income);
-    setState((previous) => ({ ...previous, incomes: [income, ...previous.incomes].slice(0, 25), lastPlan: plan, appliedPlanSignature: undefined }));
+    const planIncome = { ...income, exchangeRate: usdToNgnRate };
+    const plan = generateAllocation(state, planIncome);
+    setState((previous) => ({ ...previous, incomes: [planIncome, ...previous.incomes].slice(0, 25), lastPlan: plan, appliedPlanSignature: undefined }));
     setApplyStatus(null);
     setIsDeletePlanDialogOpen(false);
     setActiveTab('dashboard');
@@ -234,10 +254,72 @@ export default function Home() {
       amount: Number(decisionDraft.amount || 0),
       currency: decisionDraft.currency,
       category: decisionDraft.category,
-      exchangeRate: Number(decisionDraft.exchangeRate || 1600),
+      exchangeRate: usdToNgnRate,
       date: new Date().toISOString().slice(0, 10),
     }));
   };
+
+  const refreshExchangeRate = async () => {
+    setIsRefreshingRate(true);
+    setRateStatus('Refreshing live USD/NGN rate...');
+    try {
+      const response = await fetch('/api/exchange-rate', { cache: 'no-store' });
+      const data = (await response.json()) as { rate?: { usdToNgn: number; source: 'open-er-api'; provider?: string; updatedAt?: string }; error?: string };
+      if (!response.ok || !data.rate) throw new Error(data.error ?? 'Unable to refresh USD/NGN exchange rate.');
+      setState((previous) => ({
+        ...previous,
+        exchangeRateSettings: {
+          usdToNgn: data.rate!.usdToNgn,
+          source: data.rate!.source,
+          provider: data.rate!.provider,
+          updatedAt: data.rate!.updatedAt ?? new Date().toISOString(),
+          autoRefresh: previous.exchangeRateSettings.autoRefresh,
+        },
+      }));
+      setIncome((previous) => ({ ...previous, exchangeRate: data.rate!.usdToNgn }));
+      setDecisionDraft((previous) => ({ ...previous, exchangeRate: String(data.rate!.usdToNgn) }));
+      setRateStatus(`Live USD/NGN rate updated: ₦${formatRate(data.rate.usdToNgn)}/$`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unable to refresh USD/NGN exchange rate.';
+      setRateStatus(`Rate refresh failed — keeping ₦${formatRate(usdToNgnRate)}/$. ${message}`);
+    } finally {
+      setIsRefreshingRate(false);
+    }
+  };
+
+  const saveManualExchangeRate = (value: string) => {
+    const nextRate = Number(value);
+    if (!Number.isFinite(nextRate) || nextRate <= 0) {
+      setRateStatus('Enter a positive USD/NGN rate before saving.');
+      return;
+    }
+    setState((previous) => ({
+      ...previous,
+      exchangeRateSettings: {
+        ...previous.exchangeRateSettings,
+        usdToNgn: nextRate,
+        source: 'manual',
+        updatedAt: new Date().toISOString(),
+        error: undefined,
+      },
+    }));
+    setIncome((previous) => ({ ...previous, exchangeRate: nextRate }));
+    setDecisionDraft((previous) => ({ ...previous, exchangeRate: String(nextRate) }));
+    setRateStatus(`Manual USD/NGN rate saved: ₦${formatRate(nextRate)}/$`);
+  };
+
+  useEffect(() => {
+    if (!hasLoadedServerState || !state.exchangeRateSettings.autoRefresh) {
+      hasStartedAutoRateRefresh.current = false;
+      return;
+    }
+    if (hasStartedAutoRateRefresh.current) return;
+    hasStartedAutoRateRefresh.current = true;
+    refreshExchangeRate();
+    const intervalId = window.setInterval(refreshExchangeRate, 60 * 60 * 1000);
+    return () => window.clearInterval(intervalId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hasLoadedServerState, state.exchangeRateSettings.autoRefresh]);
 
   const resetData = () => setState(getDefaultState());
 
@@ -261,7 +343,7 @@ export default function Home() {
         </header>
 
         <nav className="flex flex-wrap gap-2 rounded-2xl border border-white/10 bg-white/5 p-2">
-          {(['dashboard', 'income', 'checker', 'goals', 'debts', 'expenses'] as const).map((tab) => (
+          {(['dashboard', 'income', 'checker', 'goals', 'debts', 'expenses', 'settings'] as const).map((tab) => (
             <button key={tab} onClick={() => setActiveTab(tab)} className={`rounded-xl px-4 py-2 text-sm font-bold capitalize transition ${activeTab === tab ? 'bg-emerald-400 text-black' : 'bg-white/5 text-white hover:bg-white/10'}`}>{tab}</button>
           ))}
           <button onClick={resetData} className="ml-auto rounded-xl bg-red-400/10 px-4 py-2 text-sm font-bold text-red-200 hover:bg-red-400/20">Reset demo data</button>
@@ -273,7 +355,7 @@ export default function Home() {
               <Metric title="Income logged" value={formatMoney(dashboard.totalIncome)} note="SQLite ledger history" />
               <Metric title="Active goal gap" value={formatMoney(dashboard.goalRemaining)} note="All active goals" />
               <Metric title="Debt remaining" value={formatMoney(dashboard.debtRemaining)} note="Active debts only" />
-              <Metric title="Monthly expense map" value={formatMoney(dashboard.monthlyExpenses)} note="Includes USD tools @ ₦1,600/$" />
+              <Metric title="Monthly expense map" value={formatMoney(dashboard.monthlyExpenses)} note={`Includes USD tools @ ₦${formatRate(usdToNgnRate)}/$`} />
             </div>
 
             <div className="grid gap-6 lg:grid-cols-2">
@@ -355,7 +437,7 @@ export default function Home() {
               <Input label="Source" value={income.source} onChange={(value) => setIncome({ ...income, source: value })} />
               <Input label="Amount" type="number" value={String(income.amount)} onChange={(value) => setIncome({ ...income, amount: Number(value) })} />
               <Select label="Currency" value={income.currency} onChange={(value) => setIncome({ ...income, currency: value as Currency })} options={['NGN', 'USD']} />
-              <Input label="USD→NGN exchange rate" type="number" value={String(income.exchangeRate)} onChange={(value) => setIncome({ ...income, exchangeRate: Number(value) })} />
+              <Input label="USD→NGN exchange rate" type="number" value={String(usdToNgnRate)} onChange={saveManualExchangeRate} />
               <Input label="Date received" type="date" value={income.date} onChange={(value) => setIncome({ ...income, date: value })} />
               <Input label="Notes" value={income.notes || ''} onChange={(value) => setIncome({ ...income, notes: value })} />
             </div>
@@ -371,7 +453,7 @@ export default function Home() {
               <Input label="Amount" type="number" value={decisionDraft.amount} onChange={(value) => setDecisionDraft({ ...decisionDraft, amount: value })} />
               <Select label="Currency" value={decisionDraft.currency} onChange={(value) => setDecisionDraft({ ...decisionDraft, currency: value as Currency })} options={['NGN', 'USD']} />
               <Input label="Category" value={decisionDraft.category} onChange={(value) => setDecisionDraft({ ...decisionDraft, category: value })} />
-              <Input label="USD→NGN rate" type="number" value={decisionDraft.exchangeRate} onChange={(value) => setDecisionDraft({ ...decisionDraft, exchangeRate: value })} />
+              <Input label="USD→NGN rate" type="number" value={String(usdToNgnRate)} onChange={saveManualExchangeRate} />
             </div>
             <button onClick={runExpenseDecision} className="mt-6 rounded-2xl bg-emerald-400 px-6 py-3 font-black text-black hover:bg-emerald-300">Check before spending</button>
 
@@ -456,7 +538,7 @@ export default function Home() {
             <div className="mt-5 space-y-2">
               {state.expenses.map((expense) => (
                 <div key={expense.id} className="flex flex-col gap-3 rounded-xl bg-white/5 p-3 text-sm text-white/75 sm:flex-row sm:items-center sm:justify-between">
-                  <span>{expense.name} — {formatMoney(expense.amount, expense.currency)} {expense.frequency === 'yearly' ? 'yearly' : 'monthly'} — monthly planning: {formatMoney(getMonthlyExpenseAmount(expense, 1600))} — {expense.priority}{expense.workCritical ? ' — work-critical' : ''}</span>
+                  <span>{expense.name} — {formatMoney(expense.amount, expense.currency)} {expense.frequency === 'yearly' ? 'yearly' : 'monthly'} — monthly planning: {formatMoney(getMonthlyExpenseAmount(expense, usdToNgnRate))} — {expense.priority}{expense.workCritical ? ' — work-critical' : ''}</span>
                   <button
                     onClick={() => requestDeleteExpense(expense)}
                     className="self-start rounded-xl border border-red-300/30 bg-red-400/10 px-3 py-2 text-xs font-black text-red-100 transition hover:bg-red-400/20 sm:self-auto"
@@ -465,6 +547,42 @@ export default function Home() {
                   </button>
                 </div>
               ))}
+            </div>
+          </Panel>
+        )}
+
+
+        {activeTab === 'settings' && (
+          <Panel title="Exchange rate settings">
+            <div className="grid gap-5 lg:grid-cols-[1.2fr_0.8fr]">
+              <div className="rounded-3xl border border-emerald-300/15 bg-emerald-400/10 p-5">
+                <p className="text-sm text-emerald-100/70">Active USD→NGN rate</p>
+                <p className="mt-2 text-4xl font-black text-emerald-300">₦{formatRate(usdToNgnRate)}/$</p>
+                <p className="mt-3 text-sm text-white/65">
+                  Source: {state.exchangeRateSettings.source === 'open-er-api' ? 'Live API via ExchangeRate-API open endpoint' : 'Manual fallback'}
+                  {state.exchangeRateSettings.updatedAt ? ` · Updated ${state.exchangeRateSettings.updatedAt}` : ''}
+                </p>
+                <p className="mt-2 text-xs text-white/45">All USD income, subscriptions, allocation equivalents, reports, and expense checks now read this managed rate instead of a hardcoded ₦1,600/$ value.</p>
+              </div>
+              <div className="space-y-4 rounded-3xl border border-white/10 bg-white/[0.04] p-5">
+                <Input label="Manual USD→NGN rate" type="number" value={String(usdToNgnRate)} onChange={saveManualExchangeRate} />
+                <button
+                  onClick={refreshExchangeRate}
+                  disabled={isRefreshingRate}
+                  className={`w-full rounded-2xl px-5 py-3 font-black text-black transition ${isRefreshingRate ? 'cursor-not-allowed bg-emerald-200/70' : 'bg-emerald-400 hover:bg-emerald-300'}`}
+                >
+                  {isRefreshingRate ? 'Refreshing...' : 'Refresh live USD/NGN rate'}
+                </button>
+                <label className="flex items-center gap-3 rounded-2xl bg-black/25 p-3 text-sm text-white/70">
+                  <input
+                    type="checkbox"
+                    checked={state.exchangeRateSettings.autoRefresh}
+                    onChange={(event) => setState((previous) => ({ ...previous, exchangeRateSettings: { ...previous.exchangeRateSettings, autoRefresh: event.target.checked } }))}
+                  />
+                  Auto-refresh from the free API when the dashboard loads
+                </label>
+                {rateStatus && <p className="rounded-xl bg-blue-400/10 p-3 text-sm font-semibold text-blue-100" aria-live="polite">{rateStatus}</p>}
+              </div>
             </div>
           </Panel>
         )}
@@ -525,7 +643,7 @@ export default function Home() {
                   <p className="text-xs uppercase tracking-widest text-white/40">Expense to remove</p>
                   <p className="mt-2 text-xl font-black text-white">{expenseToDelete.name}</p>
                   <p className="mt-1 text-sm text-white/60">
-                    {formatMoney(expenseToDelete.amount, expenseToDelete.currency)} {expenseToDelete.frequency} · monthly planning {formatMoney(getMonthlyExpenseAmount(expenseToDelete, 1600))}
+                    {formatMoney(expenseToDelete.amount, expenseToDelete.currency)} {expenseToDelete.frequency} · monthly planning {formatMoney(getMonthlyExpenseAmount(expenseToDelete, usdToNgnRate))}
                   </p>
                 </div>
                 <p className="rounded-2xl border border-amber-300/20 bg-amber-400/10 p-4 text-sm text-amber-50">

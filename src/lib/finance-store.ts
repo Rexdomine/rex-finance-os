@@ -3,6 +3,7 @@ import { mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import {
   buildDefaultState,
+  migrateAppState,
   type AllocationItem,
   type AllocationPlan,
   type AppState,
@@ -204,9 +205,10 @@ export async function createFinanceStore(options: FinanceStoreOptions = {}): Pro
     mode,
     async getAppState() {
       const result = await client.execute('SELECT payload FROM app_state WHERE id = 1');
-      return payload<AppState>(result.rows[0]) ?? buildDefaultState();
+      return migrateAppState(payload<AppState>(result.rows[0]) ?? buildDefaultState());
     },
     async saveAppState(state: AppState) {
+      const migratedState = migrateAppState(state);
       const statements: InStatement[] = [
         { sql: 'DELETE FROM allocation_items' },
         { sql: 'DELETE FROM allocation_plans' },
@@ -218,21 +220,21 @@ export async function createFinanceStore(options: FinanceStoreOptions = {}): Pro
           sql: `INSERT INTO app_state (id, payload, updated_at)
                 VALUES (1, ?, CURRENT_TIMESTAMP)
                 ON CONFLICT(id) DO UPDATE SET payload = excluded.payload, updated_at = CURRENT_TIMESTAMP`,
-          args: [JSON.stringify(state)],
+          args: [JSON.stringify(migratedState)],
         },
-        ...state.goals.map(goalStatement),
-        ...state.debts.map(debtStatement),
-        ...state.expenses.map(expenseStatement),
-        ...state.incomes.map(incomeStatement),
+        ...migratedState.goals.map(goalStatement),
+        ...migratedState.debts.map(debtStatement),
+        ...migratedState.expenses.map(expenseStatement),
+        ...migratedState.incomes.map(incomeStatement),
       ];
 
       await client.batch(statements, 'write');
 
-      if (state.lastPlan) {
-        const planResult = await client.execute(planStatement(state.lastPlan));
+      if (migratedState.lastPlan) {
+        const planResult = await client.execute(planStatement(migratedState.lastPlan));
         const planId = Number(planResult.lastInsertRowid);
-        if (planId > 0 && state.lastPlan.items.length > 0) {
-          await client.batch(state.lastPlan.items.map((item) => itemStatement(planId, item)), 'write');
+        if (planId > 0 && migratedState.lastPlan.items.length > 0) {
+          await client.batch(migratedState.lastPlan.items.map((item) => itemStatement(planId, item)), 'write');
         }
       }
     },
