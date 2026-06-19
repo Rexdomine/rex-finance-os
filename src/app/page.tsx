@@ -252,10 +252,31 @@ export default function Home() {
 
   const addDebt = () => {
     if (!debtDraft.name || !debtDraft.totalAmount) return;
+    const totalAmount = Number(debtDraft.totalAmount);
+    const remainingAmount = Number(debtDraft.remainingAmount || debtDraft.totalAmount);
+    const minimumDueAmount = Number(debtDraft.minimumDueAmount || 0);
+
+    if (
+      !Number.isFinite(totalAmount) ||
+      totalAmount <= 0 ||
+      !Number.isFinite(remainingAmount) ||
+      remainingAmount < 0 ||
+      remainingAmount > totalAmount ||
+      !Number.isFinite(minimumDueAmount) ||
+      minimumDueAmount < 0 ||
+      minimumDueAmount > remainingAmount
+    ) {
+      setManagementStatusTone('warning');
+      setManagementStatus('Enter valid debt amounts before adding. Remaining balance cannot exceed total debt, and minimum due cannot exceed remaining balance.');
+      return;
+    }
+
     setState((previous) => ({
       ...previous,
-      debts: [...previous.debts, { id: uid(), name: debtDraft.name, totalAmount: Number(debtDraft.totalAmount), remainingAmount: Number(debtDraft.remainingAmount || debtDraft.totalAmount), currency: 'NGN', minimumDueAmount: Number(debtDraft.minimumDueAmount || 0), dueDate: debtDraft.dueDate || new Date().toISOString().slice(0, 10), urgency: debtDraft.urgency, status: 'active', strategy: 'minimum-first' }],
+      debts: [...previous.debts, { id: uid(), name: debtDraft.name, totalAmount, remainingAmount, currency: 'NGN', minimumDueAmount, dueDate: debtDraft.dueDate || new Date().toISOString().slice(0, 10), urgency: debtDraft.urgency, status: 'active', strategy: 'minimum-first' }],
     }));
+    setManagementStatusTone('success');
+    setManagementStatus(`Debt added: ${debtDraft.name}. Saving to ledger...`);
     setDebtDraft({ name: '', totalAmount: '', remainingAmount: '', minimumDueAmount: '', dueDate: '', urgency: 'normal' });
   };
 
@@ -333,9 +354,18 @@ export default function Home() {
     const totalAmount = Number(debtEditDraft.totalAmount);
     const remainingAmount = Number(debtEditDraft.remainingAmount);
     const minimumDueAmount = Number(debtEditDraft.minimumDueAmount);
-    if (!Number.isFinite(totalAmount) || totalAmount <= 0 || !Number.isFinite(remainingAmount) || remainingAmount < 0 || remainingAmount > totalAmount || !Number.isFinite(minimumDueAmount) || minimumDueAmount < 0) {
+    if (
+      !Number.isFinite(totalAmount) ||
+      totalAmount <= 0 ||
+      !Number.isFinite(remainingAmount) ||
+      remainingAmount < 0 ||
+      remainingAmount > totalAmount ||
+      !Number.isFinite(minimumDueAmount) ||
+      minimumDueAmount < 0 ||
+      minimumDueAmount > remainingAmount
+    ) {
       setManagementStatusTone('warning');
-      setManagementStatus('Enter valid debt amounts before updating. Remaining balance cannot exceed total debt.');
+      setManagementStatus('Enter valid debt amounts before updating. Remaining balance cannot exceed total debt, and minimum due cannot exceed remaining balance.');
       return;
     }
 

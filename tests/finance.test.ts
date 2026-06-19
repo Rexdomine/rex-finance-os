@@ -89,7 +89,7 @@ describe('Rex Finance OS finance rules', () => {
       currentAmount: 1500000,
       deadline: '2026-09-30',
       priority: 'high',
-      status: 'active',
+      status: 'paused',
     });
 
     const originalGoal = state.goals.find((goal) => goal.id === 'move-out');
@@ -103,6 +103,7 @@ describe('Rex Finance OS finance rules', () => {
     assert.equal(updatedGoal.currentAmount, 1500000);
     assert.equal(updatedGoal.deadline, '2026-09-30');
     assert.equal(updatedGoal.priority, 'high');
+    assert.equal(updatedGoal.status, 'paused');
     assert.equal(state.goals.find((goal) => goal.id === 'move-out')?.targetAmount, 6000000, 'original state should remain immutable');
     assert.deepEqual(updated.goals.filter((goal) => goal.id !== 'move-out'), state.goals.filter((goal) => goal.id !== 'move-out'));
   });
@@ -115,7 +116,7 @@ describe('Rex Finance OS finance rules', () => {
       minimumDueAmount: 75000,
       dueDate: '2026-07-31',
       urgency: 'normal',
-      status: 'active',
+      status: 'paid',
     });
 
     const originalDebt = state.debts.find((debt) => debt.id === 'bank-debt');
@@ -130,6 +131,7 @@ describe('Rex Finance OS finance rules', () => {
     assert.equal(updatedDebt.minimumDueAmount, 75000);
     assert.equal(updatedDebt.dueDate, '2026-07-31');
     assert.equal(updatedDebt.urgency, 'normal');
+    assert.equal(updatedDebt.status, 'paid');
     assert.equal(state.debts.find((debt) => debt.id === 'bank-debt')?.remainingAmount, 359000, 'original state should remain immutable');
     assert.deepEqual(updated.debts.filter((debt) => debt.id !== 'bank-debt'), state.debts.filter((debt) => debt.id !== 'bank-debt'));
   });
