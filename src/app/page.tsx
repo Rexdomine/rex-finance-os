@@ -732,16 +732,16 @@ export default function Home() {
           </div>
         )}
         {expenseToEdit && expenseEditDraft && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="edit-expense-title">
-            <div className="w-full max-w-2xl overflow-hidden rounded-[2rem] border border-emerald-300/30 bg-[#081711] shadow-2xl shadow-black/60">
-              <div className="border-b border-white/10 bg-gradient-to-br from-emerald-400/20 via-slate-950 to-black p-6">
+          <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/70 px-4 py-4 backdrop-blur-sm sm:items-center sm:py-6" role="dialog" aria-modal="true" aria-labelledby="edit-expense-title">
+            <div className="flex max-h-[calc(100dvh-2rem)] w-full max-w-2xl flex-col overflow-hidden rounded-[2rem] border border-emerald-300/30 bg-[#081711] shadow-2xl shadow-black/60 sm:max-h-[calc(100dvh-3rem)]">
+              <div className="shrink-0 border-b border-white/10 bg-gradient-to-br from-emerald-400/20 via-slate-950 to-black p-5 sm:p-6">
                 <p className="text-xs font-black uppercase tracking-[0.35em] text-emerald-200">Manage expense</p>
                 <h3 id="edit-expense-title" className="mt-3 text-2xl font-black text-white">Edit expense</h3>
                 <p className="mt-3 text-sm leading-6 text-white/70">
                   Update {expenseToEdit.name} when prices change, or recategorize it when it becomes must-pay, important, flexible, pauseable, or work-critical.
                 </p>
               </div>
-              <div className="space-y-5 p-6">
+              <div className="min-h-0 flex-1 space-y-5 overflow-y-auto p-5 sm:p-6">
                 <div className="rounded-2xl bg-white/5 p-4">
                   <p className="text-xs uppercase tracking-widest text-white/40">Expense being edited</p>
                   <p className="mt-2 text-xl font-black text-white">{expenseToEdit.name}</p>
