@@ -10,6 +10,10 @@ export type DecisionVerdict = 'approve' | 'caution' | 'delay' | 'avoid';
 export type Goal = { id: string; name: string; targetAmount: number; currentAmount: number; currency: Currency; deadline: string; priority: Priority; status: GoalStatus; strategy: 'deadline-based' | 'fixed-percentage' | 'fixed-amount' | 'manual'; notes?: string; };
 export type Debt = { id: string; name: string; totalAmount: number; remainingAmount: number; currency: Currency; minimumDueAmount: number; dueDate: string; urgency: Urgency; status: DebtStatus; strategy: 'minimum-first' | 'aggressive-payoff' | 'percentage-income' | 'manual'; notes?: string; };
 export type RecurringExpense = { id: string; name: string; amount: number; currency: Currency; frequency: 'weekly' | 'monthly' | 'yearly' | 'one-time'; category: string; priority: ExpensePriority; dueDay?: number; workCritical: boolean; };
+/**
+ * Editable fields for a recurring expense, excluding its stable identity.
+ */
+export type RecurringExpenseUpdate = Partial<Omit<RecurringExpense, 'id' | 'name'>>;
 export type Income = { source: string; amount: number; currency: Currency; exchangeRate: number; date: string; notes?: string; };
 export type ExchangeRateSource = 'manual' | 'open-er-api';
 export type ExchangeRateSettings = { usdToNgn: number; source: ExchangeRateSource; provider?: string; updatedAt?: string; autoRefresh: boolean; error?: string; };
@@ -59,6 +63,16 @@ export function migrateAppState(stored: Partial<AppState>): AppState {
     expenses: Array.isArray(stored.expenses) ? stored.expenses : defaults.expenses,
     incomes: Array.isArray(stored.incomes) ? stored.incomes : defaults.incomes,
     exchangeRateSettings,
+  };
+}
+
+/**
+ * Updates a recurring expense by id while preserving immutable state and expense identity.
+ */
+export function updateRecurringExpense(state: AppState, expenseId: string, updates: RecurringExpenseUpdate): AppState {
+  return {
+    ...state,
+    expenses: state.expenses.map((expense) => (expense.id === expenseId ? { ...expense, ...updates, id: expense.id } : expense)),
   };
 }
 
@@ -126,6 +140,9 @@ export function getMonthlyExpenseAmount(expense: RecurringExpense, exchangeRate:
   return baseNgn;
 }
 
+/**
+ * Counts whole calendar days between two dates for deadline-based goal pacing.
+ */
 function daysBetween(start: Date, end: Date) { return Math.max(1, Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24))); }
 
 /**

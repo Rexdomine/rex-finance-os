@@ -45,4 +45,14 @@ describe('Rex Finance OS page UX contracts', () => {
     assert.match(pageSource, /reason each expense was excluded/i);
     assert.match(pageSource, /excludedAmountNgn/);
   });
+
+  it('opens an expense edit modal with controls for amount, category, priority, and work-critical status', () => {
+    assert.match(pageSource, /expenseToEdit/);
+    assert.match(pageSource, /Edit expense/i);
+    assert.match(pageSource, /Update this expense/i);
+    assert.match(pageSource, /Amount/i);
+    assert.match(pageSource, /Category/i);
+    assert.match(pageSource, /Priority/i);
+    assert.match(pageSource, /Work-critical/i);
+  });
 });

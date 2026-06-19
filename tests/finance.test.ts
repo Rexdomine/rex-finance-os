@@ -9,6 +9,7 @@ import {
   getUsdToNgnRate,
   migrateAppState,
   checkExpenseDecision,
+  updateRecurringExpense,
 } from '../src/lib/finance';
 
 describe('Rex Finance OS finance rules', () => {
@@ -53,6 +54,30 @@ describe('Rex Finance OS finance rules', () => {
     assert.equal(vps.amount, 96);
     assert.equal(vps.currency, 'USD');
     assert.equal(getMonthlyExpenseAmount(vps, 1600), 12800);
+  });
+
+  it('updates an existing recurring expense without changing its identity or other expenses', () => {
+    const state = buildDefaultState();
+    const updated = updateRecurringExpense(state, 'food', {
+      amount: 180000,
+      category: 'Essentials - inflation adjusted',
+      priority: 'important',
+      workCritical: true,
+    });
+
+    const originalFood = state.expenses.find((expense) => expense.id === 'food');
+    const updatedFood = updated.expenses.find((expense) => expense.id === 'food');
+
+    assert.ok(originalFood && updatedFood);
+    assert.equal(updated.expenses.length, state.expenses.length);
+    assert.equal(updatedFood.id, 'food');
+    assert.equal(updatedFood.name, originalFood.name);
+    assert.equal(updatedFood.amount, 180000);
+    assert.equal(updatedFood.category, 'Essentials - inflation adjusted');
+    assert.equal(updatedFood.priority, 'important');
+    assert.equal(updatedFood.workCritical, true);
+    assert.equal(state.expenses.find((expense) => expense.id === 'food')?.amount, 120000, 'original state should remain immutable');
+    assert.deepEqual(updated.expenses.filter((expense) => expense.id !== 'food'), state.expenses.filter((expense) => expense.id !== 'food'));
   });
 
   it('keeps savings and investment line items in income allocation', () => {

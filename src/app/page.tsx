@@ -15,6 +15,7 @@ import {
   migrateAppState,
   toNgn,
   toUsd,
+  updateRecurringExpense,
   type AppState,
   type Currency,
   type ExpenseDecision,
@@ -30,6 +31,15 @@ const uid = () => Math.random().toString(36).slice(2, 10);
 const STORAGE_KEY = 'rex-finance-os-v1';
 
 const getDefaultState = () => buildDefaultState();
+
+type ExpenseEditDraft = {
+  amount: string;
+  currency: Currency;
+  frequency: RecurringExpense['frequency'];
+  category: string;
+  priority: ExpensePriority;
+  workCritical: boolean;
+};
 
 /**
  * Formats exchange rates for compact dashboard and settings display.
@@ -71,6 +81,8 @@ export default function Home() {
   const [expenseStatus, setExpenseStatus] = useState<string | null>(null);
   const [expenseStatusTone, setExpenseStatusTone] = useState<'success' | 'warning'>('success');
   const [expenseToDelete, setExpenseToDelete] = useState<RecurringExpense | null>(null);
+  const [expenseToEdit, setExpenseToEdit] = useState<RecurringExpense | null>(null);
+  const [expenseEditDraft, setExpenseEditDraft] = useState<ExpenseEditDraft | null>(null);
   const [applyStatus, setApplyStatus] = useState<string | null>(null);
   const [isDeletePlanDialogOpen, setIsDeletePlanDialogOpen] = useState(false);
   const [hasLoadedServerState, setHasLoadedServerState] = useState(false);
@@ -241,6 +253,45 @@ export default function Home() {
     setExpenseStatusTone('success');
     setExpenseStatus(`Expense added: ${addedExpense.name} — ${formatMoney(addedExpense.amount, addedExpense.currency)} ${addedExpense.frequency}. Saving to ledger...`);
     setExpenseDraft({ name: '', amount: '', currency: 'NGN', frequency: 'monthly', category: 'Essentials', priority: 'important', workCritical: false });
+  };
+
+  const requestEditExpense = (expense: RecurringExpense) => {
+    setExpenseToEdit(expense);
+    setExpenseEditDraft({
+      amount: String(expense.amount),
+      currency: expense.currency,
+      frequency: expense.frequency,
+      category: expense.category,
+      priority: expense.priority,
+      workCritical: expense.workCritical,
+    });
+  };
+
+  const cancelEditExpense = () => {
+    setExpenseToEdit(null);
+    setExpenseEditDraft(null);
+  };
+
+  const confirmEditExpense = () => {
+    if (!expenseToEdit || !expenseEditDraft) return;
+    const nextAmount = Number(expenseEditDraft.amount);
+    if (!Number.isFinite(nextAmount) || nextAmount <= 0 || !expenseEditDraft.category.trim()) {
+      setExpenseStatusTone('warning');
+      setExpenseStatus('Enter a positive amount and category before updating the expense.');
+      return;
+    }
+
+    setState((previous) => updateRecurringExpense(previous, expenseToEdit.id, {
+      amount: nextAmount,
+      currency: expenseEditDraft.currency,
+      frequency: expenseEditDraft.frequency,
+      category: expenseEditDraft.category.trim(),
+      priority: expenseEditDraft.priority,
+      workCritical: expenseEditDraft.workCritical,
+    }));
+    setExpenseStatusTone('success');
+    setExpenseStatus(`Expense updated: ${expenseToEdit.name} — ${formatMoney(nextAmount, expenseEditDraft.currency)} ${expenseEditDraft.frequency}. Saving to ledger...`);
+    cancelEditExpense();
   };
 
   const requestDeleteExpense = (expense: RecurringExpense) => {
@@ -583,12 +634,20 @@ export default function Home() {
               {state.expenses.map((expense) => (
                 <div key={expense.id} className="flex flex-col gap-3 rounded-xl bg-white/5 p-3 text-sm text-white/75 sm:flex-row sm:items-center sm:justify-between">
                   <span>{expense.name} — {formatMoney(expense.amount, expense.currency)} {expense.frequency === 'yearly' ? 'yearly' : 'monthly'} — monthly planning: {formatMoney(getMonthlyExpenseAmount(expense, usdToNgnRate))} — {expense.priority}{expense.workCritical ? ' — work-critical' : ''}</span>
-                  <button
-                    onClick={() => requestDeleteExpense(expense)}
-                    className="self-start rounded-xl border border-red-300/30 bg-red-400/10 px-3 py-2 text-xs font-black text-red-100 transition hover:bg-red-400/20 sm:self-auto"
-                  >
-                    Delete expense
-                  </button>
+                  <div className="flex flex-wrap gap-2 sm:justify-end">
+                    <button
+                      onClick={() => requestEditExpense(expense)}
+                      className="self-start rounded-xl border border-emerald-300/30 bg-emerald-400/10 px-3 py-2 text-xs font-black text-emerald-100 transition hover:bg-emerald-400/20 sm:self-auto"
+                    >
+                      Edit expense
+                    </button>
+                    <button
+                      onClick={() => requestDeleteExpense(expense)}
+                      className="self-start rounded-xl border border-red-300/30 bg-red-400/10 px-3 py-2 text-xs font-black text-red-100 transition hover:bg-red-400/20 sm:self-auto"
+                    >
+                      Delete expense
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>
@@ -666,6 +725,46 @@ export default function Home() {
                   </button>
                   <button onClick={confirmDeleteLastPlan} className="rounded-2xl bg-red-400 px-4 py-3 font-black text-black transition hover:bg-red-300">
                     {isLastPlanApplied ? 'Yes, delete and reverse' : 'Yes, delete plan'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+        {expenseToEdit && expenseEditDraft && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="edit-expense-title">
+            <div className="w-full max-w-2xl overflow-hidden rounded-[2rem] border border-emerald-300/30 bg-[#081711] shadow-2xl shadow-black/60">
+              <div className="border-b border-white/10 bg-gradient-to-br from-emerald-400/20 via-slate-950 to-black p-6">
+                <p className="text-xs font-black uppercase tracking-[0.35em] text-emerald-200">Manage expense</p>
+                <h3 id="edit-expense-title" className="mt-3 text-2xl font-black text-white">Edit expense</h3>
+                <p className="mt-3 text-sm leading-6 text-white/70">
+                  Update {expenseToEdit.name} when prices change, or recategorize it when it becomes must-pay, important, flexible, pauseable, or work-critical.
+                </p>
+              </div>
+              <div className="space-y-5 p-6">
+                <div className="rounded-2xl bg-white/5 p-4">
+                  <p className="text-xs uppercase tracking-widest text-white/40">Expense being edited</p>
+                  <p className="mt-2 text-xl font-black text-white">{expenseToEdit.name}</p>
+                  <p className="mt-1 text-sm text-white/60">
+                    Current monthly planning: {formatMoney(getMonthlyExpenseAmount(expenseToEdit, usdToNgnRate))}
+                  </p>
+                </div>
+                <div className="grid gap-4 md:grid-cols-2">
+                  <Input label="Amount" type="number" value={expenseEditDraft.amount} onChange={(value) => setExpenseEditDraft({ ...expenseEditDraft, amount: value })} />
+                  <Select label="Currency" value={expenseEditDraft.currency} onChange={(value) => setExpenseEditDraft({ ...expenseEditDraft, currency: value as Currency })} options={['NGN', 'USD']} />
+                  <Select label="Frequency" value={expenseEditDraft.frequency} onChange={(value) => setExpenseEditDraft({ ...expenseEditDraft, frequency: value as RecurringExpense['frequency'] })} options={['monthly', 'yearly', 'weekly', 'one-time']} />
+                  <Input label="Category" value={expenseEditDraft.category} onChange={(value) => setExpenseEditDraft({ ...expenseEditDraft, category: value })} />
+                  <Select label="Priority" value={expenseEditDraft.priority} onChange={(value) => setExpenseEditDraft({ ...expenseEditDraft, priority: value as ExpensePriority })} options={['must-pay', 'important', 'flexible', 'pauseable']} />
+                  <label className="flex items-end gap-2 rounded-xl bg-white/5 p-3 text-sm">
+                    <input type="checkbox" checked={expenseEditDraft.workCritical} onChange={(event) => setExpenseEditDraft({ ...expenseEditDraft, workCritical: event.target.checked })} /> Work-critical
+                  </label>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <button onClick={cancelEditExpense} className="rounded-2xl border border-white/10 bg-white/10 px-4 py-3 font-black text-white transition hover:bg-white/15">
+                    Cancel, keep current expense
+                  </button>
+                  <button onClick={confirmEditExpense} className="rounded-2xl bg-emerald-400 px-4 py-3 font-black text-black transition hover:bg-emerald-300">
+                    Update this expense
                   </button>
                 </div>
               </div>
