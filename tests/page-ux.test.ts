@@ -78,7 +78,7 @@ describe('Rex Finance OS page UX contracts', () => {
   });
 
   it('guards debt adds and edits against impossible minimum due amounts', () => {
-    const invalidMinimumDueGuards = pageSource.match(/minimumDueAmount > remainingAmount/g) ?? [];
+    const invalidMinimumDueGuards = pageSource.match(/minimumDueAmount\s*>\s*remainingAmount/g) ?? [];
 
     assert.ok(invalidMinimumDueGuards.length >= 2, 'add and edit debt flows should both reject minimum due amounts above remaining balance');
     assert.match(pageSource, /Enter valid debt amounts before adding/i);
