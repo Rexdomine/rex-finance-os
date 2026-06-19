@@ -3,7 +3,7 @@ export type Priority = 'critical' | 'high' | 'medium' | 'low';
 export type GoalStatus = 'active' | 'paused' | 'completed' | 'archived';
 export type DebtStatus = 'active' | 'paid' | 'paused';
 export type Urgency = 'urgent' | 'normal' | 'flexible';
-export type ExpensePriority = 'must-pay' | 'important' | 'flexible' | 'pauseable';
+export type ExpensePriority = 'must-pay' | 'important' | 'flexible' | 'pauseable' | 'cah';
 export type DestinationType = 'expense' | 'goal' | 'debt' | 'savings' | 'investment' | 'lifestyle' | 'buffer';
 export type DecisionVerdict = 'approve' | 'caution' | 'delay' | 'avoid';
 
@@ -179,16 +179,14 @@ const CASH_AT_HAND_INCOME_CAP_RATE = 0.08;
  * Detects expenses that intentionally represent cash-at-hand / CAH liquidity.
  */
 function isCashAtHandExpense(expense: RecurringExpense) {
-  const normalizedName = expense.name.trim().toLowerCase();
-  const normalizedCategory = expense.category.trim().toLowerCase();
-  return normalizedName === 'cah' || normalizedName.includes('cash at hand') || normalizedCategory.includes('cash at hand') || normalizedCategory === 'liquidity';
+  return expense.priority === 'cah';
 }
 
 /**
- * Limits CAH auto-funding to discretionary expenses so must-pay/important items are not double-funded.
+ * Uses only the explicit CAH priority for cash-at-hand funding, avoiding name/category phrase guessing.
  */
 function isDiscretionaryCashAtHandExpense(expense: RecurringExpense) {
-  return isCashAtHandExpense(expense) && (expense.priority === 'flexible' || expense.priority === 'pauseable');
+  return isCashAtHandExpense(expense);
 }
 
 /**
@@ -217,7 +215,7 @@ function buildExpenseExclusion(expense: RecurringExpense, mode: string, monthlyA
   const rules = [
     `${mode} controls how much income can go to expenses before debts, savings, investments, and active goals.`,
     'Must-pay and work-critical expenses are considered first from the expense pool.',
-    'Flexible/pauseable expenses are excluded unless they match an explicit lifestyle, clothing, or cash-at-hand cap rule.',
+    'Flexible/pauseable expenses are excluded unless they match an explicit lifestyle or clothing cap rule, or you mark them with the CAH priority.',
   ];
 
   let reason = `Excluded because ${expense.priority} expenses are not directly funded in ${mode} unless an explicit cap rule includes them.`;

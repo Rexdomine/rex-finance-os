@@ -46,6 +46,15 @@ describe('Rex Finance OS page UX contracts', () => {
     assert.match(pageSource, /excludedAmountNgn/);
   });
 
+  it('offers CAH as an explicit expense priority in add and edit dropdowns', () => {
+    const priorityOptionsConstant = pageSource.match(/const\s+EXPENSE_PRIORITY_OPTIONS[\s\S]*?=\s*\[([\s\S]*?)\];/);
+    const prioritySelectsUsingSharedOptions = pageSource.match(/<Select\s+label="Priority"[\s\S]*?options=\{EXPENSE_PRIORITY_OPTIONS\}/g) ?? [];
+
+    assert.ok(priorityOptionsConstant, 'expense priority dropdowns should use a shared options source');
+    assert.match(priorityOptionsConstant[1], /'cah'/, 'shared expense priority options should include CAH');
+    assert.ok(prioritySelectsUsingSharedOptions.length >= 2, 'add and edit expense priority dropdowns should both use the shared CAH-aware options');
+  });
+
   it('opens an expense edit modal with controls for amount, category, priority, and work-critical status', () => {
     assert.match(pageSource, /expenseToEdit/);
     assert.match(pageSource, /Edit expense/i);

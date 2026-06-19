@@ -35,6 +35,7 @@ import {
 
 const uid = () => Math.random().toString(36).slice(2, 10);
 const STORAGE_KEY = 'rex-finance-os-v1';
+const EXPENSE_PRIORITY_OPTIONS: ExpensePriority[] = ['must-pay', 'important', 'flexible', 'pauseable', 'cah'];
 
 const getDefaultState = () => buildDefaultState();
 
@@ -824,7 +825,7 @@ export default function Home() {
               <Select label="Currency" value={expenseDraft.currency} onChange={(value) => setExpenseDraft({ ...expenseDraft, currency: value as Currency })} options={['NGN', 'USD']} />
               <Select label="Frequency" value={expenseDraft.frequency} onChange={(value) => setExpenseDraft({ ...expenseDraft, frequency: value as RecurringExpense['frequency'] })} options={['monthly', 'yearly', 'weekly', 'one-time']} />
               <Input label="Category" value={expenseDraft.category} onChange={(value) => setExpenseDraft({ ...expenseDraft, category: value })} />
-              <Select label="Priority" value={expenseDraft.priority} onChange={(value) => setExpenseDraft({ ...expenseDraft, priority: value as ExpensePriority })} options={['must-pay', 'important', 'flexible', 'pauseable']} />
+              <Select label="Priority" value={expenseDraft.priority} onChange={(value) => setExpenseDraft({ ...expenseDraft, priority: value as ExpensePriority })} options={EXPENSE_PRIORITY_OPTIONS} />
               <label className="flex items-end gap-2 rounded-xl bg-white/5 p-3 text-sm"><input type="checkbox" checked={expenseDraft.workCritical} onChange={(event) => setExpenseDraft({ ...expenseDraft, workCritical: event.target.checked })} /> Work-critical</label>
             </div>
             <button onClick={addExpense} className="mt-4 rounded-xl bg-emerald-400 px-5 py-2 font-bold text-black">Add expense</button>
@@ -1049,7 +1050,7 @@ export default function Home() {
                 <p className="text-xs font-black uppercase tracking-[0.35em] text-emerald-200">Manage expense</p>
                 <h3 id="edit-expense-title" className="mt-3 text-2xl font-black text-white">Edit expense</h3>
                 <p className="mt-3 text-sm leading-6 text-white/70">
-                  Update {expenseToEdit.name} when prices change, or recategorize it when it becomes must-pay, important, flexible, pauseable, or work-critical.
+                  Update {expenseToEdit.name} when prices change, or recategorize it when it becomes must-pay, important, flexible, pauseable, CAH, or work-critical.
                 </p>
               </div>
               <div className="min-h-0 flex-1 space-y-5 overflow-y-auto p-5 sm:p-6">
@@ -1065,7 +1066,7 @@ export default function Home() {
                   <Select label="Currency" value={expenseEditDraft.currency} onChange={(value) => setExpenseEditDraft({ ...expenseEditDraft, currency: value as Currency })} options={['NGN', 'USD']} />
                   <Select label="Frequency" value={expenseEditDraft.frequency} onChange={(value) => setExpenseEditDraft({ ...expenseEditDraft, frequency: value as RecurringExpense['frequency'] })} options={['monthly', 'yearly', 'weekly', 'one-time']} />
                   <Input label="Category" value={expenseEditDraft.category} onChange={(value) => setExpenseEditDraft({ ...expenseEditDraft, category: value })} />
-                  <Select label="Priority" value={expenseEditDraft.priority} onChange={(value) => setExpenseEditDraft({ ...expenseEditDraft, priority: value as ExpensePriority })} options={['must-pay', 'important', 'flexible', 'pauseable']} />
+                  <Select label="Priority" value={expenseEditDraft.priority} onChange={(value) => setExpenseEditDraft({ ...expenseEditDraft, priority: value as ExpensePriority })} options={EXPENSE_PRIORITY_OPTIONS} />
                   <label className="flex items-end gap-2 rounded-xl bg-white/5 p-3 text-sm">
                     <input type="checkbox" checked={expenseEditDraft.workCritical} onChange={(event) => setExpenseEditDraft({ ...expenseEditDraft, workCritical: event.target.checked })} /> Work-critical
                   </label>
