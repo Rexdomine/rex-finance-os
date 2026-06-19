@@ -1,281 +1,47 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { checkExpenseDecision, getMonthlyExpenseAmount, type ExpenseDecision } from '@/lib/finance';
+import {
+  applyAllocationPlanToProgress,
+  buildDefaultState,
+  checkExpenseDecision,
+  deleteAllocationPlan,
+  formatMoney,
+  generateAllocation,
+  getAllocationPlanProgressTotals,
+  getAllocationPlanSignature,
+  getMonthlyExpenseAmount,
+  toNgn,
+  toUsd,
+  type AppState,
+  type Currency,
+  type ExpenseDecision,
+  type ExpensePriority,
+  type Income,
+  type Priority,
+  type RecurringExpense,
+  type Urgency,
+} from '@/lib/finance';
 
-type Currency = 'NGN' | 'USD';
-type Priority = 'critical' | 'high' | 'medium' | 'low';
-type GoalStatus = 'active' | 'paused' | 'completed' | 'archived';
-type DebtStatus = 'active' | 'paid' | 'paused';
-type Urgency = 'urgent' | 'normal' | 'flexible';
-type ExpensePriority = 'must-pay' | 'important' | 'flexible' | 'pauseable';
-type DestinationType = 'expense' | 'goal' | 'debt' | 'savings' | 'investment' | 'lifestyle' | 'buffer';
-
-type Goal = {
-  id: string;
-  name: string;
-  targetAmount: number;
-  currentAmount: number;
-  currency: Currency;
-  deadline: string;
-  priority: Priority;
-  status: GoalStatus;
-  strategy: 'deadline-based' | 'fixed-percentage' | 'fixed-amount' | 'manual';
-  notes?: string;
-};
-
-type Debt = {
-  id: string;
-  name: string;
-  totalAmount: number;
-  remainingAmount: number;
-  currency: Currency;
-  minimumDueAmount: number;
-  dueDate: string;
-  urgency: Urgency;
-  status: DebtStatus;
-  strategy: 'minimum-first' | 'aggressive-payoff' | 'percentage-income' | 'manual';
-  notes?: string;
-};
-
-type RecurringExpense = {
-  id: string;
-  name: string;
-  amount: number;
-  currency: Currency;
-  frequency: 'weekly' | 'monthly' | 'yearly' | 'one-time';
-  category: string;
-  priority: ExpensePriority;
-  dueDay?: number;
-  workCritical: boolean;
-};
-
-type Income = {
-  source: string;
-  amount: number;
-  currency: Currency;
-  exchangeRate: number;
-  date: string;
-  notes?: string;
-};
-
-type AllocationItem = {
-  id: string;
-  destinationName: string;
-  destinationType: DestinationType;
-  amount: number;
-  currency: Currency;
-  priority: string;
-  reason: string;
-};
-
-type AllocationPlan = {
-  mode: string;
-  inputAmountNgn: number;
-  items: AllocationItem[];
-  warnings: string[];
-  recommendations: string[];
-};
-
-type AppState = {
-  goals: Goal[];
-  debts: Debt[];
-  expenses: RecurringExpense[];
-  incomes: Income[];
-  lastPlan?: AllocationPlan;
-};
 
 const uid = () => Math.random().toString(36).slice(2, 10);
 const STORAGE_KEY = 'rex-finance-os-v1';
 
-const defaultState: AppState = {
-  goals: [
-    {
-      id: 'move-out',
-      name: 'Move-Out Fund',
-      targetAmount: 6000000,
-      currentAmount: 1200000,
-      currency: 'NGN',
-      deadline: '2026-08-31',
-      priority: 'critical',
-      status: 'active',
-      strategy: 'deadline-based',
-      notes: 'Rent, agent fee, legal, caution, moving logistics, and part of inverter setup.',
-    },
-    {
-      id: 'emergency',
-      name: 'Emergency Buffer',
-      targetAmount: 300000,
-      currentAmount: 0,
-      currency: 'NGN',
-      deadline: '2026-08-31',
-      priority: 'high',
-      status: 'active',
-      strategy: 'fixed-percentage',
-      notes: 'Protects against irregular income gaps.',
-    },
-    {
-      id: 'investment-seed',
-      name: 'Investment Seed',
-      targetAmount: 250000,
-      currentAmount: 0,
-      currency: 'NGN',
-      deadline: '2026-12-31',
-      priority: 'medium',
-      status: 'active',
-      strategy: 'fixed-percentage',
-      notes: 'Small consistent wealth-building contributions.',
-    },
-  ],
-  debts: [
-    {
-      id: 'bank-debt',
-      name: 'Bank Debt',
-      totalAmount: 359000,
-      remainingAmount: 359000,
-      currency: 'NGN',
-      minimumDueAmount: 180120,
-      dueDate: '2026-06-30',
-      urgency: 'urgent',
-      status: 'active',
-      strategy: 'minimum-first',
-      notes: 'Current month due amount is ₦180,120; remaining can be handled next cycle.',
-    },
-  ],
-  expenses: [
-    { id: 'openai', name: 'OpenAI Max', amount: 100, currency: 'USD', frequency: 'monthly', category: 'Work tools', priority: 'must-pay', workCritical: true },
-    { id: 'wispr', name: 'Wispr Flow', amount: 12, currency: 'USD', frequency: 'monthly', category: 'Work tools', priority: 'must-pay', workCritical: true },
-    { id: 'vps-hosting', name: 'VPS Hosting', amount: 96, currency: 'USD', frequency: 'yearly', category: 'Work tools', priority: 'must-pay', workCritical: true },
-    { id: 'internet', name: 'Internet', amount: 50000, currency: 'NGN', frequency: 'monthly', category: 'Work tools', priority: 'must-pay', workCritical: true },
-    { id: 'food', name: 'Food', amount: 120000, currency: 'NGN', frequency: 'monthly', category: 'Essentials', priority: 'must-pay', workCritical: false },
-    { id: 'electricity', name: 'Electricity', amount: 50000, currency: 'NGN', frequency: 'monthly', category: 'Essentials', priority: 'must-pay', workCritical: true },
-    { id: 'fuel', name: 'Fuel / Transport', amount: 100000, currency: 'NGN', frequency: 'monthly', category: 'Essentials', priority: 'must-pay', workCritical: true },
-    { id: 'phone', name: 'Phone / Data', amount: 30000, currency: 'NGN', frequency: 'monthly', category: 'Essentials', priority: 'must-pay', workCritical: true },
-    { id: 'family', name: 'Family Support Cap', amount: 75000, currency: 'NGN', frequency: 'monthly', category: 'Family', priority: 'important', workCritical: false },
-    { id: 'prime', name: 'Prime Video', amount: 2500, currency: 'NGN', frequency: 'monthly', category: 'Subscriptions', priority: 'flexible', workCritical: false },
-    { id: 'netflix', name: 'Netflix', amount: 8500, currency: 'NGN', frequency: 'monthly', category: 'Subscriptions', priority: 'flexible', workCritical: false },
-    { id: 'lifestyle', name: 'Lifestyle Cap', amount: 50000, currency: 'NGN', frequency: 'monthly', category: 'Lifestyle', priority: 'flexible', workCritical: false },
-  ],
-  incomes: [],
-};
-
-function formatMoney(amount: number, currency: Currency = 'NGN') {
-  return new Intl.NumberFormat('en-NG', {
-    style: 'currency',
-    currency,
-    maximumFractionDigits: currency === 'NGN' ? 0 : 2,
-  }).format(Math.max(0, amount || 0));
-}
-
-function toNgn(amount: number, currency: Currency, exchangeRate: number) {
-  return currency === 'USD' ? amount * exchangeRate : amount;
-}
-
-function daysBetween(start: Date, end: Date) {
-  return Math.max(1, Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)));
-}
-
-function generateAllocation(state: AppState, income: Income): AllocationPlan {
-  const amountNgn = toNgn(income.amount, income.currency, income.exchangeRate || 1600);
-  const items: AllocationItem[] = [];
-  const warnings: string[] = [];
-  const recommendations: string[] = [];
-  let remaining = amountNgn;
-
-  const activeCriticalGoal = state.goals
-    .filter((goal) => goal.status === 'active' && goal.priority === 'critical' && goal.targetAmount > goal.currentAmount)
-    .sort((a, b) => new Date(a.deadline).getTime() - new Date(b.deadline).getTime())[0];
-
-  const mode = amountNgn < 500000 ? 'Survival Mode' : amountNgn < 1500000 ? 'Stability Mode' : 'Move-Out Attack Mode';
-
-  const addItem = (destinationName: string, destinationType: DestinationType, rawAmount: number, priority: string, reason: string) => {
-    const amount = Math.max(0, Math.min(remaining, Math.round(rawAmount)));
-    if (amount <= 0) return;
-    items.push({ id: uid(), destinationName, destinationType, amount, currency: 'NGN', priority, reason });
-    remaining -= amount;
-  };
-
-  const mustPayExpenses = state.expenses.filter((expense) => expense.priority === 'must-pay');
-  const monthlyMustPayNgn = mustPayExpenses.reduce((sum, expense) => sum + getMonthlyExpenseAmount(expense, income.exchangeRate || 1600), 0);
-  const expenseCap = mode === 'Survival Mode' ? amountNgn * 0.6 : mode === 'Stability Mode' ? amountNgn * 0.35 : Math.min(monthlyMustPayNgn, amountNgn * 0.32);
-  let expensePool = expenseCap;
-
-  mustPayExpenses.forEach((expense) => {
-    if (expensePool <= 0) return;
-    const desired = getMonthlyExpenseAmount(expense, income.exchangeRate || 1600);
-    const allocation = Math.min(desired, expensePool);
-    addItem(expense.name, 'expense', allocation, expense.workCritical ? 'work-critical' : 'must-pay', expense.workCritical ? 'Keeps work and income engine running.' : 'Covers core survival spending.');
-    expensePool -= allocation;
-  });
-
-  const urgentDebts = state.debts.filter((debt) => debt.status === 'active' && debt.remainingAmount > 0 && debt.urgency === 'urgent');
-  urgentDebts.forEach((debt) => {
-    const base = debt.minimumDueAmount || Math.min(debt.remainingAmount, amountNgn * 0.15);
-    const cap = mode === 'Survival Mode' ? amountNgn * 0.15 : mode === 'Stability Mode' ? amountNgn * 0.15 : Math.min(base, amountNgn * 0.2);
-    addItem(debt.name, 'debt', Math.min(base, debt.remainingAmount, cap), 'urgent debt', 'Debt pressure comes before lifestyle and most flexible spending.');
-  });
-
-  const savingsRate = mode === 'Survival Mode' ? 0.05 : mode === 'Stability Mode' ? 0.07 : 0.08;
-  const investmentRate = mode === 'Survival Mode' ? 0.03 : mode === 'Stability Mode' ? 0.05 : 0.05;
-  addItem('Emergency Savings', 'savings', Math.max(amountNgn * savingsRate, amountNgn < 100000 ? 1000 : 0), 'protective', 'Save something every time money enters, even if small.');
-  addItem('Investment Seed', 'investment', Math.max(amountNgn * investmentRate, amountNgn < 100000 ? 1000 : 0), 'wealth-building', 'Small consistent investing builds the habit before wealth scales.');
-
-  if (activeCriticalGoal) {
-    const goalRemaining = activeCriticalGoal.targetAmount - activeCriticalGoal.currentAmount;
-    const targetDate = new Date(activeCriticalGoal.deadline + 'T23:59:59');
-    const weeksLeft = daysBetween(new Date(), targetDate) / 7;
-    const weeklyNeed = goalRemaining / Math.max(1, weeksLeft);
-    const goalRate = mode === 'Survival Mode' ? 0.1 : mode === 'Stability Mode' ? 0.3 : 0.65;
-    const goalAllocation = Math.min(goalRemaining, Math.max(amountNgn * goalRate, mode === 'Move-Out Attack Mode' ? Math.min(weeklyNeed, remaining) : 0));
-    addItem(activeCriticalGoal.name, 'goal', goalAllocation, 'critical goal', `Deadline-based push. Current weekly target is about ${formatMoney(weeklyNeed)}.`);
-    if (remaining < weeklyNeed && mode !== 'Move-Out Attack Mode') {
-      warnings.push(`${activeCriticalGoal.name} needs about ${formatMoney(weeklyNeed)} weekly. This income may not fully keep pace.`);
-    }
-  }
-
-  const importantExpenses = state.expenses.filter((expense) => expense.priority === 'important');
-  importantExpenses.forEach((expense) => {
-    addItem(expense.name, 'expense', Math.min(getMonthlyExpenseAmount(expense, income.exchangeRate || 1600), amountNgn * 0.08), 'important cap', 'Useful support category, but capped while critical goals are active.');
-  });
-
-  const lifestyleCap = state.expenses.find((expense) => expense.id === 'lifestyle')?.amount ?? 50000;
-  addItem('Controlled Lifestyle', 'lifestyle', Math.min(lifestyleCap, mode === 'Survival Mode' ? amountNgn * 0.05 : amountNgn * 0.08), 'controlled', 'Guilt-free spending, but protected from eating the move-out goal.');
-
-  if (remaining > 0) {
-    const destination = activeCriticalGoal?.name ?? 'Buffer';
-    addItem(destination, activeCriticalGoal ? 'goal' : 'buffer', remaining, activeCriticalGoal ? 'extra goal push' : 'buffer', activeCriticalGoal ? 'Extra unassigned cash should accelerate the critical goal.' : 'Keep unassigned cash as buffer.');
-  }
-
-  if (amountNgn < monthlyMustPayNgn) {
-    warnings.push(`This income is below your estimated must-pay monthly expenses of ${formatMoney(monthlyMustPayNgn)}.`);
-  }
-  if (activeCriticalGoal) {
-    const remainingAfterPlan = Math.max(0, activeCriticalGoal.targetAmount - activeCriticalGoal.currentAmount - items.filter((item) => item.destinationName === activeCriticalGoal.name).reduce((sum, item) => sum + item.amount, 0));
-    recommendations.push(`${activeCriticalGoal.name} would have ${formatMoney(remainingAfterPlan)} left after this allocation.`);
-  }
-  recommendations.push('Review the split before spending. The plan is advice; you can still manually adjust it.');
-
-  return { mode, inputAmountNgn: amountNgn, items, warnings, recommendations };
-}
+const getDefaultState = () => buildDefaultState();
 
 function progress(current: number, target: number) {
   return Math.min(100, Math.round((current / Math.max(target, 1)) * 100));
 }
 
 function migrateState(stored: AppState): AppState {
-  if (stored.expenses.some((expense) => expense.id === 'vps-hosting')) return stored;
-  const wisprIndex = stored.expenses.findIndex((expense) => expense.id === 'wispr');
-  const vps: RecurringExpense = { id: 'vps-hosting', name: 'VPS Hosting', amount: 96, currency: 'USD', frequency: 'yearly', category: 'Work tools', priority: 'must-pay', workCritical: true };
-  const expenses = [...stored.expenses];
-  expenses.splice(wisprIndex >= 0 ? wisprIndex + 1 : 0, 0, vps);
-  return { ...stored, expenses };
+  return stored;
 }
 
 export default function Home() {
   const [state, setState] = useState<AppState>(() => {
-    if (typeof window === 'undefined') return defaultState;
+    if (typeof window === 'undefined') return getDefaultState();
     const stored = window.localStorage.getItem(STORAGE_KEY);
-    return stored ? migrateState(JSON.parse(stored)) : defaultState;
+    return stored ? migrateState(JSON.parse(stored)) : getDefaultState();
   });
   const [activeTab, setActiveTab] = useState<'dashboard' | 'income' | 'checker' | 'goals' | 'debts' | 'expenses'>('dashboard');
   const [income, setIncome] = useState<Income>({ source: 'Freelance / Remote work', amount: 850000, currency: 'NGN', exchangeRate: 1600, date: new Date().toISOString().slice(0, 10), notes: '' });
@@ -284,6 +50,11 @@ export default function Home() {
   const [expenseDraft, setExpenseDraft] = useState({ name: '', amount: '', currency: 'NGN' as Currency, frequency: 'monthly' as RecurringExpense['frequency'], category: 'Essentials', priority: 'important' as ExpensePriority, workCritical: false });
   const [decisionDraft, setDecisionDraft] = useState({ name: 'Sneakers', amount: '120000', currency: 'NGN' as Currency, category: 'Clothing', exchangeRate: '1600' });
   const [expenseDecision, setExpenseDecision] = useState<ExpenseDecision | null>(null);
+  const [expenseStatus, setExpenseStatus] = useState<string | null>(null);
+  const [expenseStatusTone, setExpenseStatusTone] = useState<'success' | 'warning'>('success');
+  const [expenseToDelete, setExpenseToDelete] = useState<RecurringExpense | null>(null);
+  const [applyStatus, setApplyStatus] = useState<string | null>(null);
+  const [isDeletePlanDialogOpen, setIsDeletePlanDialogOpen] = useState(false);
   const [hasLoadedServerState, setHasLoadedServerState] = useState(false);
   const [syncStatus, setSyncStatus] = useState('Loading finance ledger...');
   const [ledgerMode, setLedgerMode] = useState<'turso-libsql' | 'local-libsql' | null>(null);
@@ -352,28 +123,48 @@ export default function Home() {
     return { activeGoals, activeDebts, goalRemaining, debtRemaining, monthlyExpenses, totalIncome };
   }, [state]);
 
+  const currentPlanSignature = getAllocationPlanSignature(state.lastPlan);
+  const isLastPlanApplied = Boolean(state.lastPlan && state.appliedPlanSignature === currentPlanSignature);
+  const deletePlanImpact = getAllocationPlanProgressTotals(state.lastPlan);
+
   const runAllocation = () => {
     const plan = generateAllocation(state, income);
-    setState((previous) => ({ ...previous, incomes: [income, ...previous.incomes].slice(0, 25), lastPlan: plan }));
+    setState((previous) => ({ ...previous, incomes: [income, ...previous.incomes].slice(0, 25), lastPlan: plan, appliedPlanSignature: undefined }));
+    setApplyStatus(null);
+    setIsDeletePlanDialogOpen(false);
     setActiveTab('dashboard');
   };
 
   const applyLastPlan = () => {
     if (!state.lastPlan) return;
-    setState((previous) => ({
-      ...previous,
-      goals: previous.goals.map((goal) => {
-        const add = previous.lastPlan?.items.filter((item) => item.destinationType === 'goal' && item.destinationName === goal.name).reduce((sum, item) => sum + item.amount, 0) ?? 0;
-        const currentAmount = Math.min(goal.targetAmount, goal.currentAmount + add);
-        return { ...goal, currentAmount, status: currentAmount >= goal.targetAmount ? 'completed' : goal.status };
-      }),
-      debts: previous.debts.map((debt) => {
-        const paid = previous.lastPlan?.items.filter((item) => item.destinationType === 'debt' && item.destinationName === debt.name).reduce((sum, item) => sum + item.amount, 0) ?? 0;
-        const remainingAmount = Math.max(0, debt.remainingAmount - paid);
-        return { ...debt, remainingAmount, status: remainingAmount <= 0 ? 'paid' : debt.status };
-      }),
-    }));
+
+    const currentSignature = getAllocationPlanSignature(state.lastPlan);
+    if (state.appliedPlanSignature === currentSignature) {
+      setApplyStatus('Already applied — this plan will not be counted twice.');
+      return;
+    }
+
+    const { goalTotal, debtTotal } = getAllocationPlanProgressTotals(state.lastPlan);
+    setState((previous) => applyAllocationPlanToProgress(previous));
+    setApplyStatus(`Applied: ${formatMoney(goalTotal)} added to goals and ${formatMoney(debtTotal)} paid down from debts. Saving to Turso...`);
   };
+
+  const deleteLastPlan = () => {
+    if (!state.lastPlan) return;
+    setIsDeletePlanDialogOpen(true);
+  };
+
+  const confirmDeleteLastPlan = () => {
+    if (!state.lastPlan) return;
+    const { goalTotal, debtTotal } = getAllocationPlanProgressTotals(state.lastPlan);
+    setState((previous) => deleteAllocationPlan(previous));
+    setIsDeletePlanDialogOpen(false);
+    setApplyStatus(isLastPlanApplied
+      ? `Allocation plan deleted, income log cleared, and progress reversed: ${formatMoney(goalTotal)} removed from goals and ${formatMoney(debtTotal)} restored to debts. Saving to Turso...`
+      : 'Allocation plan deleted and the linked income log cleared. No goal or debt progress had been applied yet. Saving to Turso...');
+  };
+
+  const cancelDeleteLastPlan = () => setIsDeletePlanDialogOpen(false);
 
   const addGoal = () => {
     if (!goalDraft.name || !goalDraft.targetAmount) return;
@@ -394,12 +185,47 @@ export default function Home() {
   };
 
   const addExpense = () => {
-    if (!expenseDraft.name || !expenseDraft.amount) return;
+    if (!expenseDraft.name || !expenseDraft.amount) {
+      setExpenseStatusTone('warning');
+      setExpenseStatus('Add an expense name and amount first.');
+      return;
+    }
+
+    const addedExpense = {
+      id: uid(),
+      name: expenseDraft.name,
+      amount: Number(expenseDraft.amount),
+      currency: expenseDraft.currency,
+      frequency: expenseDraft.frequency,
+      category: expenseDraft.category,
+      priority: expenseDraft.priority,
+      workCritical: expenseDraft.workCritical,
+    };
+
     setState((previous) => ({
       ...previous,
-      expenses: [...previous.expenses, { id: uid(), name: expenseDraft.name, amount: Number(expenseDraft.amount), currency: expenseDraft.currency, frequency: expenseDraft.frequency, category: expenseDraft.category, priority: expenseDraft.priority, workCritical: expenseDraft.workCritical }],
+      expenses: [...previous.expenses, addedExpense],
     }));
+    setExpenseStatusTone('success');
+    setExpenseStatus(`Expense added: ${addedExpense.name} — ${formatMoney(addedExpense.amount, addedExpense.currency)} ${addedExpense.frequency}. Saving to ledger...`);
     setExpenseDraft({ name: '', amount: '', currency: 'NGN', frequency: 'monthly', category: 'Essentials', priority: 'important', workCritical: false });
+  };
+
+  const requestDeleteExpense = (expense: RecurringExpense) => {
+    setExpenseToDelete(expense);
+  };
+
+  const cancelDeleteExpense = () => setExpenseToDelete(null);
+
+  const confirmDeleteExpense = () => {
+    if (!expenseToDelete) return;
+    setState((previous) => ({
+      ...previous,
+      expenses: previous.expenses.filter((expense) => expense.id !== expenseToDelete.id),
+    }));
+    setExpenseStatusTone('success');
+    setExpenseStatus(`Expense deleted: ${expenseToDelete.name}. Saving to ledger...`);
+    setExpenseToDelete(null);
   };
 
   const runExpenseDecision = () => {
@@ -413,7 +239,7 @@ export default function Home() {
     }));
   };
 
-  const resetData = () => setState(defaultState);
+  const resetData = () => setState(getDefaultState());
 
   return (
     <main className="min-h-screen bg-[#07130f] text-white">
@@ -474,6 +300,7 @@ export default function Home() {
                     <div className="rounded-2xl bg-emerald-400/10 p-4">
                       <p className="text-sm text-emerald-200">{state.lastPlan.mode}</p>
                       <p className="text-2xl font-black">{formatMoney(state.lastPlan.inputAmountNgn)}</p>
+                      <p className="mt-1 text-sm text-emerald-100/75">USD equivalent: {formatMoney(state.lastPlan.inputAmountUsd ?? toUsd(state.lastPlan.inputAmountNgn, state.lastPlan.exchangeRate ?? income.exchangeRate), 'USD')}</p>
                     </div>
                     <div className="max-h-[28rem] space-y-3 overflow-auto pr-1">
                       {state.lastPlan.items.map((item) => (
@@ -484,16 +311,39 @@ export default function Home() {
                               <p className="text-xs uppercase tracking-widest text-white/40">{item.destinationType} · {item.priority}</p>
                               <p className="mt-2 text-sm text-white/60">{item.reason}</p>
                             </div>
-                            <p className="whitespace-nowrap font-black text-emerald-300">{formatMoney(item.amount)}</p>
+                            <div className="text-right">
+                              <p className="whitespace-nowrap font-black text-emerald-300">{formatMoney(item.amount)}</p>
+                              <p className="mt-1 whitespace-nowrap text-xs font-semibold text-white/50">≈ {formatMoney(item.amountUsd ?? toUsd(item.amount, state.lastPlan?.exchangeRate ?? income.exchangeRate), 'USD')}</p>
+                            </div>
                           </div>
                         </div>
                       ))}
                     </div>
                     {state.lastPlan.warnings.map((warning) => <p key={warning} className="rounded-xl bg-amber-400/10 p-3 text-sm text-amber-100">⚠ {warning}</p>)}
                     {state.lastPlan.recommendations.map((recommendation) => <p key={recommendation} className="rounded-xl bg-blue-400/10 p-3 text-sm text-blue-100">💡 {recommendation}</p>)}
-                    <button onClick={applyLastPlan} className="w-full rounded-2xl bg-emerald-400 px-4 py-3 font-black text-black hover:bg-emerald-300">Apply plan to goal/debt progress</button>
+                    {applyStatus && <p className="rounded-xl bg-emerald-400/10 p-3 text-sm font-semibold text-emerald-100">✅ {applyStatus}</p>}
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <button
+                        onClick={applyLastPlan}
+                        disabled={isLastPlanApplied}
+                        className={`rounded-2xl px-4 py-3 font-black text-black transition ${isLastPlanApplied ? 'cursor-not-allowed bg-emerald-200/60' : 'bg-emerald-400 hover:bg-emerald-300'}`}
+                      >
+                        {isLastPlanApplied ? 'Plan already applied' : 'Apply plan to goal/debt progress'}
+                      </button>
+                      <button
+                        onClick={deleteLastPlan}
+                        className="rounded-2xl border border-red-300/30 bg-red-400/10 px-4 py-3 font-black text-red-100 transition hover:bg-red-400/20"
+                      >
+                        Delete allocation plan
+                      </button>
+                    </div>
                   </div>
-                ) : <p className="text-white/60">No allocation generated yet. Add income to cook the first split.</p>}
+                ) : (
+                  <div className="space-y-3">
+                    {applyStatus && <p className="rounded-xl bg-emerald-400/10 p-3 text-sm font-semibold text-emerald-100">✅ {applyStatus}</p>}
+                    <p className="text-white/60">No allocation generated yet. Add income to cook the first split.</p>
+                  </div>
+                )}
               </Panel>
             </div>
           </div>
@@ -595,8 +445,103 @@ export default function Home() {
               <label className="flex items-end gap-2 rounded-xl bg-white/5 p-3 text-sm"><input type="checkbox" checked={expenseDraft.workCritical} onChange={(event) => setExpenseDraft({ ...expenseDraft, workCritical: event.target.checked })} /> Work-critical</label>
             </div>
             <button onClick={addExpense} className="mt-4 rounded-xl bg-emerald-400 px-5 py-2 font-bold text-black">Add expense</button>
-            <List items={state.expenses.map((expense) => `${expense.name} — ${formatMoney(expense.amount, expense.currency)} ${expense.frequency === 'yearly' ? 'yearly' : 'monthly'} — monthly planning: ${formatMoney(getMonthlyExpenseAmount(expense, 1600))} — ${expense.priority}${expense.workCritical ? ' — work-critical' : ''}`)} />
+            {expenseStatus && (
+              <p
+                aria-live="polite"
+                className={`mt-3 rounded-xl border p-3 text-sm font-semibold ${expenseStatusTone === 'success' ? 'border-emerald-300/20 bg-emerald-400/10 text-emerald-100' : 'border-amber-300/25 bg-amber-400/10 text-amber-100'}`}
+              >
+                {expenseStatusTone === 'success' ? '✅' : '⚠️'} {expenseStatus}
+              </p>
+            )}
+            <div className="mt-5 space-y-2">
+              {state.expenses.map((expense) => (
+                <div key={expense.id} className="flex flex-col gap-3 rounded-xl bg-white/5 p-3 text-sm text-white/75 sm:flex-row sm:items-center sm:justify-between">
+                  <span>{expense.name} — {formatMoney(expense.amount, expense.currency)} {expense.frequency === 'yearly' ? 'yearly' : 'monthly'} — monthly planning: {formatMoney(getMonthlyExpenseAmount(expense, 1600))} — {expense.priority}{expense.workCritical ? ' — work-critical' : ''}</span>
+                  <button
+                    onClick={() => requestDeleteExpense(expense)}
+                    className="self-start rounded-xl border border-red-300/30 bg-red-400/10 px-3 py-2 text-xs font-black text-red-100 transition hover:bg-red-400/20 sm:self-auto"
+                  >
+                    Delete expense
+                  </button>
+                </div>
+              ))}
+            </div>
           </Panel>
+        )}
+        {isDeletePlanDialogOpen && state.lastPlan && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="delete-plan-title">
+            <div className="w-full max-w-lg overflow-hidden rounded-[2rem] border border-red-300/30 bg-[#081711] shadow-2xl shadow-black/60">
+              <div className="border-b border-white/10 bg-gradient-to-br from-red-400/20 via-slate-950 to-emerald-950/40 p-6">
+                <p className="text-xs font-black uppercase tracking-[0.35em] text-red-200">Confirm deletion</p>
+                <h3 id="delete-plan-title" className="mt-3 text-2xl font-black text-white">Delete this allocation plan?</h3>
+                <p className="mt-3 text-sm leading-6 text-white/70">
+                  {isLastPlanApplied
+                    ? 'This plan has already updated your goals/debts. Deleting it will also clear the linked income log and reverse the applied Move-Out/debt progress from this exact allocation.'
+                    : 'This plan has not been applied yet. Deleting it will remove the visible allocation plan and clear the linked income log.'}
+                </p>
+              </div>
+              <div className="space-y-4 p-6">
+                <div className="grid gap-3 sm:grid-cols-3">
+                  <div className="rounded-2xl bg-white/5 p-4">
+                    <p className="text-xs uppercase tracking-widest text-white/40">Income log to clear</p>
+                    <p className="mt-2 text-xl font-black text-emerald-100">{formatMoney(state.lastPlan.inputAmountNgn)}</p>
+                  </div>
+                  <div className="rounded-2xl bg-white/5 p-4">
+                    <p className="text-xs uppercase tracking-widest text-white/40">Goal progress to remove</p>
+                    <p className="mt-2 text-xl font-black text-red-100">{formatMoney(isLastPlanApplied ? deletePlanImpact.goalTotal : 0)}</p>
+                  </div>
+                  <div className="rounded-2xl bg-white/5 p-4">
+                    <p className="text-xs uppercase tracking-widest text-white/40">Debt balance to restore</p>
+                    <p className="mt-2 text-xl font-black text-amber-100">{formatMoney(isLastPlanApplied ? deletePlanImpact.debtTotal : 0)}</p>
+                  </div>
+                </div>
+                <p className="rounded-2xl border border-amber-300/20 bg-amber-400/10 p-4 text-sm text-amber-50">
+                  Groot safety check: this cannot be undone automatically after saving. If this was the wrong plan, cancel and review first.
+                </p>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <button onClick={cancelDeleteLastPlan} className="rounded-2xl border border-white/10 bg-white/10 px-4 py-3 font-black text-white transition hover:bg-white/15">
+                    Cancel, keep plan
+                  </button>
+                  <button onClick={confirmDeleteLastPlan} className="rounded-2xl bg-red-400 px-4 py-3 font-black text-black transition hover:bg-red-300">
+                    {isLastPlanApplied ? 'Yes, delete and reverse' : 'Yes, delete plan'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+        {expenseToDelete && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="delete-expense-title">
+            <div className="w-full max-w-lg overflow-hidden rounded-[2rem] border border-red-300/30 bg-[#081711] shadow-2xl shadow-black/60">
+              <div className="border-b border-white/10 bg-gradient-to-br from-red-400/20 via-slate-950 to-emerald-950/40 p-6">
+                <p className="text-xs font-black uppercase tracking-[0.35em] text-red-200">Confirm expense removal</p>
+                <h3 id="delete-expense-title" className="mt-3 text-2xl font-black text-white">Delete this expense?</h3>
+                <p className="mt-3 text-sm leading-6 text-white/70">
+                  This removes the expense from your monthly expense map and future allocation planning. It will not touch income history, goals, or debts.
+                </p>
+              </div>
+              <div className="space-y-4 p-6">
+                <div className="rounded-2xl bg-white/5 p-4">
+                  <p className="text-xs uppercase tracking-widest text-white/40">Expense to remove</p>
+                  <p className="mt-2 text-xl font-black text-white">{expenseToDelete.name}</p>
+                  <p className="mt-1 text-sm text-white/60">
+                    {formatMoney(expenseToDelete.amount, expenseToDelete.currency)} {expenseToDelete.frequency} · monthly planning {formatMoney(getMonthlyExpenseAmount(expenseToDelete, 1600))}
+                  </p>
+                </div>
+                <p className="rounded-2xl border border-amber-300/20 bg-amber-400/10 p-4 text-sm text-amber-50">
+                  Groot safety check: cancel if you only wanted to review this expense. Confirming will save the updated expense list to the ledger.
+                </p>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <button onClick={cancelDeleteExpense} className="rounded-2xl border border-white/10 bg-white/10 px-4 py-3 font-black text-white transition hover:bg-white/15">
+                    Cancel, keep expense
+                  </button>
+                  <button onClick={confirmDeleteExpense} className="rounded-2xl bg-red-400 px-4 py-3 font-black text-black transition hover:bg-red-300">
+                    Yes, delete expense
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
         )}
       </section>
     </main>

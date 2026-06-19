@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import {
+  applyAllocationPlanToProgress,
   buildDefaultState,
+  deleteAllocationPlan,
   generateAllocation,
   getMonthlyExpenseAmount,
   checkExpenseDecision,
@@ -31,6 +33,110 @@ describe('Rex Finance OS finance rules', () => {
 
     assert.ok(plan.items.some((item) => item.destinationType === 'savings' && item.amount > 0));
     assert.ok(plan.items.some((item) => item.destinationType === 'investment' && item.amount > 0));
+  });
+
+  it('keeps Naira as the main allocation amount and includes dollar equivalents for transfers', () => {
+    const state = buildDefaultState();
+    const plan = generateAllocation(state, {
+      source: 'Remote client USD payment',
+      amount: 1000,
+      currency: 'USD',
+      exchangeRate: 1600,
+      date: '2026-06-14',
+    });
+
+    assert.equal(plan.inputAmountNgn, 1600000);
+    assert.equal(plan.inputAmountUsd, 1000);
+    assert.equal(plan.exchangeRate, 1600);
+    assert.ok(plan.items.length > 0);
+    assert.ok(plan.items.every((item) => item.currency === 'NGN'), 'allocation should remain Naira-first');
+    assert.ok(plan.items.every((item) => typeof item.amountUsd === 'number' && item.amountUsd > 0), 'each line should expose a USD equivalent');
+
+    const openAi = plan.items.find((item) => item.destinationName === 'OpenAI Max');
+    assert.ok(openAi, 'OpenAI Max should be part of the split');
+    assert.equal(openAi.amount, 160000);
+    assert.equal(openAi.amountUsd, 100);
+  });
+
+  it('includes honest lifestyle and clothing buckets before the move-out push on larger income', () => {
+    const state = buildDefaultState();
+    const plan = generateAllocation(state, {
+      source: 'Test income',
+      amount: 2043536,
+      currency: 'NGN',
+      exchangeRate: 1600,
+      date: '2026-06-14',
+    });
+
+    assert.ok(plan.items.some((item) => item.destinationName === 'Lifestyle Cap' && item.amount > 0), 'Lifestyle Cap should be funded');
+    assert.ok(plan.items.some((item) => item.destinationName === 'Clothing Cap' && item.amount > 0), 'Clothing Cap should be funded');
+  });
+
+  it('applies an allocation plan to goal and debt progress only once', () => {
+    const state = buildDefaultState();
+    const plan = generateAllocation(state, {
+      source: 'Client payment',
+      amount: 2043536,
+      currency: 'NGN',
+      exchangeRate: 1600,
+      date: '2026-06-14',
+    });
+
+    const withPlan = { ...state, lastPlan: plan };
+    const applied = applyAllocationPlanToProgress(withPlan);
+    const moveOutBefore = state.goals.find((goal) => goal.id === 'move-out');
+    const moveOutAfter = applied.goals.find((goal) => goal.id === 'move-out');
+    const bankDebtBefore = state.debts.find((debt) => debt.id === 'bank-debt');
+    const bankDebtAfter = applied.debts.find((debt) => debt.id === 'bank-debt');
+
+    assert.ok(moveOutBefore && moveOutAfter);
+    assert.ok(bankDebtBefore && bankDebtAfter);
+    assert.ok(moveOutAfter.currentAmount > moveOutBefore.currentAmount, 'Move-Out Fund should increase');
+    assert.ok(bankDebtAfter.remainingAmount < bankDebtBefore.remainingAmount, 'Bank debt should decrease');
+
+    const appliedAgain = applyAllocationPlanToProgress(applied);
+    assert.equal(appliedAgain.goals.find((goal) => goal.id === 'move-out')?.currentAmount, moveOutAfter.currentAmount);
+    assert.equal(appliedAgain.debts.find((debt) => debt.id === 'bank-debt')?.remainingAmount, bankDebtAfter.remainingAmount);
+  });
+
+  it('deletes an applied allocation plan and reverses the goal/debt progress from that plan', () => {
+    const state = buildDefaultState();
+    const income = {
+      source: 'Client payment',
+      amount: 2043536,
+      currency: 'NGN' as const,
+      exchangeRate: 1600,
+      date: '2026-06-14',
+    };
+    const plan = generateAllocation(state, income);
+    const applied = applyAllocationPlanToProgress({ ...state, incomes: [income], lastPlan: plan });
+
+    const withoutPlan = deleteAllocationPlan(applied);
+
+    assert.equal(withoutPlan.lastPlan, undefined);
+    assert.equal(withoutPlan.appliedPlanSignature, undefined);
+    assert.equal(withoutPlan.incomes.length, 0);
+    assert.equal(withoutPlan.goals.find((goal) => goal.id === 'move-out')?.currentAmount, state.goals.find((goal) => goal.id === 'move-out')?.currentAmount);
+    assert.equal(withoutPlan.debts.find((debt) => debt.id === 'bank-debt')?.remainingAmount, state.debts.find((debt) => debt.id === 'bank-debt')?.remainingAmount);
+  });
+
+  it('deletes an unapplied allocation plan without changing goal/debt progress', () => {
+    const state = buildDefaultState();
+    const plan = generateAllocation(state, {
+      source: 'Client payment',
+      amount: 2043536,
+      currency: 'NGN',
+      exchangeRate: 1600,
+      date: '2026-06-14',
+    });
+    const withPlan = { ...state, lastPlan: plan };
+
+    const withoutPlan = deleteAllocationPlan(withPlan);
+
+    assert.equal(withoutPlan.lastPlan, undefined);
+    assert.equal(withoutPlan.appliedPlanSignature, undefined);
+    assert.deepEqual(withoutPlan.goals, state.goals);
+    assert.deepEqual(withoutPlan.debts, state.debts);
   });
 
   it('flags non-essential clothing while critical move-out goal is behind target', () => {
