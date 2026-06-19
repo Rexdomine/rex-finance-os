@@ -340,8 +340,21 @@ describe('Rex Finance OS finance rules', () => {
 
     assert.ok(plan.items.length > 0);
     assert.ok(plan.items.every((item) => item.amount > 0), 'visible breakdown items should always have funded amounts');
+    assert.ok(plan.items.every((item) => Math.round(item.amount) > 0), 'visible breakdown items should never display as ₦0 after currency rounding');
     assert.ok(plan.excludedExpenses.length > 0, 'unfunded amounts should be tracked in exclusions');
     assert.ok(plan.excludedExpenses.every((expense) => expense.excludedAmountNgn > 0), 'exclusions should represent positive unfunded amounts');
+  });
+
+  it('keeps sub-naira allocation leftovers out of visible items because they display as zero', () => {
+    const plan = generateAllocation({ ...buildDefaultState(), goals: [], debts: [], expenses: [] }, {
+      source: 'Fractional test payment',
+      amount: 0.4,
+      currency: 'NGN',
+      exchangeRate: 1600,
+      date: '2026-06-14',
+    });
+
+    assert.equal(plan.items.length, 0);
   });
 
   it('applies an allocation plan to goal and debt progress only once', () => {
