@@ -173,20 +173,38 @@ export function getMonthlyExpenseAmount(expense: RecurringExpense, exchangeRate:
  */
 function daysBetween(start: Date, end: Date) { return Math.max(1, Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24))); }
 
+const CASH_AT_HAND_INCOME_CAP_RATE = 0.08;
+
+/**
+ * Detects expenses that intentionally represent cash-at-hand / CAH liquidity.
+ */
 function isCashAtHandExpense(expense: RecurringExpense) {
   const normalizedName = expense.name.trim().toLowerCase();
   const normalizedCategory = expense.category.trim().toLowerCase();
-  return normalizedName === 'cah' || normalizedName.includes('cash at hand') || normalizedCategory.includes('cash at hand') || normalizedCategory.includes('liquidity');
+  return normalizedName === 'cah' || normalizedName.includes('cash at hand') || normalizedCategory.includes('cash at hand') || normalizedCategory === 'liquidity';
 }
 
+/**
+ * Limits CAH auto-funding to discretionary expenses so must-pay/important items are not double-funded.
+ */
+function isDiscretionaryCashAtHandExpense(expense: RecurringExpense) {
+  return isCashAtHandExpense(expense) && (expense.priority === 'flexible' || expense.priority === 'pauseable');
+}
+
+/**
+ * Returns the requested CAH percentage allowed for the current planning mode.
+ */
 function getCashAtHandFundingRate(mode: string) {
   if (mode === 'Survival Mode') return 0.25;
   if (mode === 'Stability Mode') return 0.5;
   return 0.75;
 }
 
+/**
+ * Returns the total income share available to all CAH expenses combined.
+ */
 function getCashAtHandIncomeCapRate() {
-  return 0.08;
+  return CASH_AT_HAND_INCOME_CAP_RATE;
 }
 
 /**
@@ -203,7 +221,7 @@ function buildExpenseExclusion(expense: RecurringExpense, mode: string, monthlyA
   ];
 
   let reason = `Excluded because ${expense.priority} expenses are not directly funded in ${mode} unless an explicit cap rule includes them.`;
-  if (isCashAtHandExpense(expense)) {
+  if (isDiscretionaryCashAtHandExpense(expense)) {
     const rate = getCashAtHandFundingRate(mode);
     reason = fundedAmountNgn > 0
       ? `Partially funded because cash at hand is treated as a realistic emergency/spending window in ${mode}, capped at ${Math.round(rate * 100)}% of the amount you requested and ${Math.round(getCashAtHandIncomeCapRate() * 100)}% of this income.`
@@ -266,6 +284,13 @@ export function generateAllocation(state: AppState, income: Income): AllocationP
   let remaining = amountNgn;
   const activeCriticalGoal = state.goals.filter((goal) => goal.status === 'active' && goal.priority === 'critical' && goal.targetAmount > goal.currentAmount).sort((a, b) => new Date(a.deadline).getTime() - new Date(b.deadline).getTime())[0];
   const mode = amountNgn < 500000 ? 'Survival Mode' : amountNgn < 1500000 ? 'Stability Mode' : 'Move-Out Attack Mode';
+  const cashAtHandBudgetCap = amountNgn * getCashAtHandIncomeCapRate();
+  const cashAtHandReserve = Math.min(
+    cashAtHandBudgetCap,
+    state.expenses
+      .filter((expense) => isDiscretionaryCashAtHandExpense(expense))
+      .reduce((sum, expense) => sum + getMonthlyExpenseAmount(expense, exchangeRate) * getCashAtHandFundingRate(mode), 0),
+  );
   const addItem = (destinationName: string, destinationType: DestinationType, rawAmount: number, priority: string, reason: string, expenseId?: string) => {
     const amount = Math.max(0, Math.min(remaining, Math.round(rawAmount)));
     if (amount <= 0) return;
@@ -290,21 +315,6 @@ export function generateAllocation(state: AppState, income: Income): AllocationP
   });
   addItem('Emergency Savings', 'savings', Math.max(amountNgn * (mode === 'Survival Mode' ? 0.05 : mode === 'Stability Mode' ? 0.07 : 0.08), amountNgn < 100000 ? 1000 : 0), 'protective', 'Save something every time money enters, even if small.');
   addItem('Investment Seed', 'investment', Math.max(amountNgn * (mode === 'Survival Mode' ? 0.03 : 0.05), amountNgn < 100000 ? 1000 : 0), 'wealth-building', 'Small consistent investing builds the habit before wealth scales.');
-  state.expenses
-    .filter((expense) => isCashAtHandExpense(expense))
-    .forEach((expense) => {
-      const rate = getCashAtHandFundingRate(mode);
-      const monthlyAmount = getMonthlyExpenseAmount(expense, exchangeRate);
-      const incomeCap = amountNgn * getCashAtHandIncomeCapRate();
-      addItem(
-        expense.name,
-        'buffer',
-        Math.min(monthlyAmount * rate, incomeCap),
-        'cash-at-hand cap',
-        `Cash at hand gets up to ${Math.round(rate * 100)}% of your requested amount in ${mode}, capped at ${Math.round(getCashAtHandIncomeCapRate() * 100)}% of this income, so you have emergency/church/quick household cash without breaking the larger plan.`,
-        expense.id,
-      );
-    });
   const lifestyleExpense = state.expenses.find((expense) => expense.id === 'lifestyle');
   if (lifestyleExpense) {
     addItem(lifestyleExpense.name, 'lifestyle', Math.min(getMonthlyExpenseAmount(lifestyleExpense, exchangeRate), mode === 'Survival Mode' ? amountNgn * 0.04 : amountNgn * 0.08), 'honest living cap', 'Planned guilt-free outing money so the budget stays realistic, not punishing.', lifestyleExpense.id);
@@ -318,8 +328,28 @@ export function generateAllocation(state: AppState, income: Income): AllocationP
     const weeksLeft = daysBetween(new Date(income.date || new Date()), new Date(activeCriticalGoal.deadline + 'T23:59:59')) / 7;
     const weeklyNeed = goalRemaining / Math.max(1, weeksLeft);
     const goalRate = mode === 'Survival Mode' ? 0.1 : mode === 'Stability Mode' ? 0.3 : 0.65;
-    addItem(activeCriticalGoal.name, 'goal', Math.min(goalRemaining, Math.max(amountNgn * goalRate, mode === 'Move-Out Attack Mode' ? Math.min(weeklyNeed, remaining) : 0)), 'critical goal', `Deadline-based push. Current weekly target is about ${formatMoney(weeklyNeed)}.`);
+    const desiredGoalAllocation = Math.max(amountNgn * goalRate, mode === 'Move-Out Attack Mode' ? Math.min(weeklyNeed, remaining) : 0);
+    const goalAllocationAfterCashReserve = Math.min(goalRemaining, Math.max(0, Math.min(desiredGoalAllocation, remaining - cashAtHandReserve)));
+    addItem(activeCriticalGoal.name, 'goal', goalAllocationAfterCashReserve, 'critical goal', `Deadline-based push. Current weekly target is about ${formatMoney(weeklyNeed)}.`);
   }
+  let cashAtHandAllocated = 0;
+  state.expenses
+    .filter((expense) => isDiscretionaryCashAtHandExpense(expense))
+    .forEach((expense) => {
+      const rate = getCashAtHandFundingRate(mode);
+      const monthlyAmount = getMonthlyExpenseAmount(expense, exchangeRate);
+      const remainingCashAtHandCap = Math.max(0, cashAtHandBudgetCap - cashAtHandAllocated);
+      const allocation = Math.min(monthlyAmount * rate, remainingCashAtHandCap);
+      addItem(
+        expense.name,
+        'buffer',
+        allocation,
+        'cash-at-hand cap',
+        `Cash at hand gets up to ${Math.round(rate * 100)}% of your requested amount in ${mode}, capped at ${Math.round(getCashAtHandIncomeCapRate() * 100)}% of this income, so you have emergency/church/quick household cash without breaking the larger plan.`,
+        expense.id,
+      );
+      cashAtHandAllocated += Math.max(0, Math.round(allocation));
+    });
   state.expenses.filter((expense) => expense.priority === 'important').forEach((expense) => addItem(expense.name, 'expense', Math.min(getMonthlyExpenseAmount(expense, exchangeRate), amountNgn * 0.08), 'important cap', 'Useful support category, but capped while critical goals are active.', expense.id));
   if (remaining > 0) addItem(activeCriticalGoal?.name ?? 'Buffer', activeCriticalGoal ? 'goal' : 'buffer', remaining, activeCriticalGoal ? 'extra goal push' : 'buffer', activeCriticalGoal ? 'Extra unassigned cash should accelerate the critical goal.' : 'Keep unassigned cash as buffer.');
   if (amountNgn < monthlyMustPayNgn) warnings.push(`This income is below your estimated must-pay monthly expenses of ${formatMoney(monthlyMustPayNgn)}.`);

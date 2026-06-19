@@ -217,7 +217,10 @@ describe('Rex Finance OS finance rules', () => {
     assert.ok(cashExclusion);
     assert.ok(selfCareExclusion);
     assert.match(cashExclusion.reason, /partially funded/i);
-    assert.ok(cashExclusion.rules.some((rule) => /Stability Mode|cash at hand|50%/i.test(rule)));
+    assert.ok(
+      cashExclusion.rules.some((rule) => /cash at hand receives up to 50%.*stability mode/i.test(rule)),
+      'cash-at-hand cap rule should explicitly mention 50% in Stability Mode',
+    );
     assert.equal(cashExclusion.monthlyAmountNgn, 100000);
     assert.equal(cashExclusion.excludedAmountNgn, 50000);
     assert.equal(selfCareExclusion.category, 'Wellbeing');
@@ -270,6 +273,57 @@ describe('Rex Finance OS finance rules', () => {
     const plan = generateAllocation(state, { source: 'Client payment', amount: 850000, currency: 'NGN', exchangeRate: 1600, date: '2026-06-14' });
 
     assert.ok(!plan.items.some((item) => item.destinationName === 'C'));
+  });
+
+  it('enforces the CAH income cap cumulatively across multiple matching expenses', () => {
+    const state = {
+      ...buildDefaultState(),
+      expenses: [
+        ...buildDefaultState().expenses,
+        { id: 'cash-at-hand', name: 'CAH', amount: 100000, currency: 'NGN' as const, frequency: 'monthly' as const, category: 'Pocket cash', priority: 'flexible' as const, workCritical: false },
+        { id: 'cash-at-hand-church', name: 'Cash at Hand - Church', amount: 100000, currency: 'NGN' as const, frequency: 'monthly' as const, category: 'Pocket cash', priority: 'flexible' as const, workCritical: false },
+      ],
+    };
+
+    const plan = generateAllocation(state, { source: 'Client payment', amount: 850000, currency: 'NGN', exchangeRate: 1600, date: '2026-06-14' });
+    const cashTotal = plan.items
+      .filter((item) => item.priority === 'cash-at-hand cap')
+      .reduce((sum, item) => sum + item.amount, 0);
+
+    assert.equal(cashTotal, 68000);
+  });
+
+  it('does not duplicate-fund must-pay expenses that happen to be named CAH', () => {
+    const state = {
+      ...buildDefaultState(),
+      expenses: [
+        { id: 'cah-must-pay', name: 'CAH', amount: 100000, currency: 'NGN' as const, frequency: 'monthly' as const, category: 'Pocket cash', priority: 'must-pay' as const, workCritical: false },
+      ],
+    };
+
+    const plan = generateAllocation(state, { source: 'Client payment', amount: 850000, currency: 'NGN', exchangeRate: 1600, date: '2026-06-14' });
+    const cahItems = plan.items.filter((item) => item.destinationName === 'CAH');
+
+    assert.equal(cahItems.length, 1);
+    assert.equal(cahItems[0].destinationType, 'expense');
+    assert.equal(cahItems[0].priority, 'must-pay');
+  });
+
+  it('places CAH after the critical goal allocation in priority order', () => {
+    const state = {
+      ...buildDefaultState(),
+      expenses: [
+        ...buildDefaultState().expenses,
+        { id: 'cash-at-hand', name: 'CAH', amount: 100000, currency: 'NGN' as const, frequency: 'monthly' as const, category: 'Pocket cash', priority: 'flexible' as const, workCritical: false },
+      ],
+    };
+
+    const plan = generateAllocation(state, { source: 'Large client payment', amount: 2000000, currency: 'NGN', exchangeRate: 1600, date: '2026-06-14' });
+    const goalIndex = plan.items.findIndex((item) => item.destinationName === 'Move-Out Fund' && item.destinationType === 'goal');
+    const cahIndex = plan.items.findIndex((item) => item.destinationName === 'CAH');
+
+    assert.ok(goalIndex >= 0);
+    assert.ok(cahIndex > goalIndex, 'CAH should be allocated after the active critical goal');
   });
 
   it('applies an allocation plan to goal and debt progress only once', () => {
