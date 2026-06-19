@@ -55,4 +55,10 @@ describe('Rex Finance OS page UX contracts', () => {
     assert.match(pageSource, /Priority/i);
     assert.match(pageSource, /Work-critical/i);
   });
+
+  it('keeps the expense edit modal scrollable on small screens so actions remain reachable', () => {
+    assert.match(pageSource, /max-h-\[calc\(100dvh-2rem\)\]/);
+    assert.match(pageSource, /overflow-y-auto/);
+    assert.match(pageSource, /items-start justify-center overflow-y-auto/);
+  });
 });
