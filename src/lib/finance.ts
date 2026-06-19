@@ -173,6 +173,18 @@ export function getMonthlyExpenseAmount(expense: RecurringExpense, exchangeRate:
  */
 function daysBetween(start: Date, end: Date) { return Math.max(1, Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24))); }
 
+function isCashAtHandExpense(expense: RecurringExpense) {
+  const normalizedName = expense.name.trim().toLowerCase();
+  const normalizedCategory = expense.category.trim().toLowerCase();
+  return normalizedName === 'c' || normalizedName.includes('cash at hand') || normalizedCategory.includes('cash at hand') || normalizedCategory.includes('liquidity');
+}
+
+function getCashAtHandFundingRate(mode: string) {
+  if (mode === 'Survival Mode') return 0.25;
+  if (mode === 'Stability Mode') return 0.5;
+  return 0.75;
+}
+
 /**
  * Explains the unfunded portion of a recurring expense after the allocation rules run.
  */
@@ -183,11 +195,18 @@ function buildExpenseExclusion(expense: RecurringExpense, mode: string, monthlyA
   const rules = [
     `${mode} controls how much income can go to expenses before debts, savings, investments, and active goals.`,
     'Must-pay and work-critical expenses are considered first from the expense pool.',
-    'Flexible/pauseable expenses are excluded unless they match an explicit lifestyle or clothing cap rule.',
+    'Flexible/pauseable expenses are excluded unless they match an explicit lifestyle, clothing, or cash-at-hand cap rule.',
   ];
 
   let reason = `Excluded because ${expense.priority} expenses are not directly funded in ${mode} unless an explicit cap rule includes them.`;
-  if (expense.priority === 'must-pay') {
+  if (isCashAtHandExpense(expense)) {
+    const rate = getCashAtHandFundingRate(mode);
+    reason = fundedAmountNgn > 0
+      ? `Partially funded because cash at hand is treated as a realistic emergency/spending window in ${mode}, capped at ${Math.round(rate * 100)}% of the amount you requested.`
+      : `Excluded because there was no room left to fund cash at hand after higher-priority obligations in ${mode}.`;
+    rules.push(`Cash at hand receives up to ${Math.round(rate * 100)}% of its requested monthly amount in ${mode}.`);
+    rules.push('This keeps emergency/church/quick household cash visible without letting it silently overpower debt, savings, or active goals.');
+  } else if (expense.priority === 'must-pay') {
     reason = fundedAmountNgn > 0
       ? 'Partially excluded because the must-pay expense pool was exhausted before the full monthly amount could be funded.'
       : 'Excluded because the capped must-pay expense pool was exhausted before this expense was reached.';
@@ -267,6 +286,20 @@ export function generateAllocation(state: AppState, income: Income): AllocationP
   });
   addItem('Emergency Savings', 'savings', Math.max(amountNgn * (mode === 'Survival Mode' ? 0.05 : mode === 'Stability Mode' ? 0.07 : 0.08), amountNgn < 100000 ? 1000 : 0), 'protective', 'Save something every time money enters, even if small.');
   addItem('Investment Seed', 'investment', Math.max(amountNgn * (mode === 'Survival Mode' ? 0.03 : 0.05), amountNgn < 100000 ? 1000 : 0), 'wealth-building', 'Small consistent investing builds the habit before wealth scales.');
+  state.expenses
+    .filter((expense) => isCashAtHandExpense(expense))
+    .forEach((expense) => {
+      const rate = getCashAtHandFundingRate(mode);
+      const monthlyAmount = getMonthlyExpenseAmount(expense, exchangeRate);
+      addItem(
+        expense.name,
+        'buffer',
+        monthlyAmount * rate,
+        'cash-at-hand cap',
+        `Cash at hand gets ${Math.round(rate * 100)}% of your requested amount in ${mode}, so you have emergency/church/quick household cash without breaking the larger plan.`,
+        expense.id,
+      );
+    });
   const lifestyleExpense = state.expenses.find((expense) => expense.id === 'lifestyle');
   if (lifestyleExpense) {
     addItem(lifestyleExpense.name, 'lifestyle', Math.min(getMonthlyExpenseAmount(lifestyleExpense, exchangeRate), mode === 'Survival Mode' ? amountNgn * 0.04 : amountNgn * 0.08), 'honest living cap', 'Planned guilt-free outing money so the budget stays realistic, not punishing.', lifestyleExpense.id);

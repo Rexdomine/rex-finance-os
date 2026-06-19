@@ -187,7 +187,7 @@ describe('Rex Finance OS finance rules', () => {
     assert.ok(plan.items.some((item) => item.destinationName === 'Clothing Cap' && item.amount > 0), 'Clothing Cap should be funded');
   });
 
-  it('explains newly added expenses that were excluded from an allocation run', () => {
+  it('partially funds cash-at-hand while still explaining the unfunded amount', () => {
     const state = {
       ...buildDefaultState(),
       expenses: [
@@ -205,7 +205,10 @@ describe('Rex Finance OS finance rules', () => {
       date: '2026-06-14',
     });
 
-    assert.ok(!plan.items.some((item) => item.destinationName === 'Cash at Hand'));
+    const cashItem = plan.items.find((item) => item.destinationName === 'Cash at Hand');
+    assert.ok(cashItem, 'Cash at Hand should receive a realistic partial allocation');
+    assert.equal(cashItem.amount, 50000);
+    assert.match(cashItem.reason, /cash at hand/i);
     assert.ok(!plan.items.some((item) => item.destinationName === 'Self Care'));
 
     const cashExclusion = plan.excludedExpenses.find((expense) => expense.expenseName === 'Cash at Hand');
@@ -213,11 +216,27 @@ describe('Rex Finance OS finance rules', () => {
 
     assert.ok(cashExclusion);
     assert.ok(selfCareExclusion);
-    assert.match(cashExclusion.reason, /flexible/i);
-    assert.ok(cashExclusion.rules.some((rule) => /Survival Mode|must-pay|explicit lifestyle/i.test(rule)));
+    assert.match(cashExclusion.reason, /partially funded/i);
+    assert.ok(cashExclusion.rules.some((rule) => /Stability Mode|cash at hand|50%/i.test(rule)));
     assert.equal(cashExclusion.monthlyAmountNgn, 100000);
-    assert.equal(cashExclusion.excludedAmountNgn, 100000);
+    assert.equal(cashExclusion.excludedAmountNgn, 50000);
     assert.equal(selfCareExclusion.category, 'Wellbeing');
+  });
+
+  it('scales cash-at-hand funding by allocation mode', () => {
+    const state = {
+      ...buildDefaultState(),
+      expenses: [
+        ...buildDefaultState().expenses,
+        { id: 'cash-at-hand', name: 'C', amount: 100000, currency: 'NGN' as const, frequency: 'monthly' as const, category: 'Cash at hand', priority: 'flexible' as const, workCritical: false },
+      ],
+    };
+
+    const survivalPlan = generateAllocation(state, { source: 'Small client payment', amount: 400000, currency: 'NGN', exchangeRate: 1600, date: '2026-06-14' });
+    const attackPlan = generateAllocation(state, { source: 'Large client payment', amount: 2000000, currency: 'NGN', exchangeRate: 1600, date: '2026-06-14' });
+
+    assert.equal(survivalPlan.items.find((item) => item.destinationName === 'C')?.amount, 25000);
+    assert.equal(attackPlan.items.find((item) => item.destinationName === 'C')?.amount, 75000);
   });
 
   it('applies an allocation plan to goal and debt progress only once', () => {
