@@ -228,15 +228,48 @@ describe('Rex Finance OS finance rules', () => {
       ...buildDefaultState(),
       expenses: [
         ...buildDefaultState().expenses,
-        { id: 'cash-at-hand', name: 'C', amount: 100000, currency: 'NGN' as const, frequency: 'monthly' as const, category: 'Cash at hand', priority: 'flexible' as const, workCritical: false },
+        { id: 'cash-at-hand', name: 'CAH', amount: 100000, currency: 'NGN' as const, frequency: 'monthly' as const, category: 'Pocket cash', priority: 'flexible' as const, workCritical: false },
       ],
     };
 
     const survivalPlan = generateAllocation(state, { source: 'Small client payment', amount: 400000, currency: 'NGN', exchangeRate: 1600, date: '2026-06-14' });
     const attackPlan = generateAllocation(state, { source: 'Large client payment', amount: 2000000, currency: 'NGN', exchangeRate: 1600, date: '2026-06-14' });
 
-    assert.equal(survivalPlan.items.find((item) => item.destinationName === 'C')?.amount, 25000);
-    assert.equal(attackPlan.items.find((item) => item.destinationName === 'C')?.amount, 75000);
+    assert.equal(survivalPlan.items.find((item) => item.destinationName === 'CAH')?.amount, 25000);
+    assert.equal(attackPlan.items.find((item) => item.destinationName === 'CAH')?.amount, 75000);
+  });
+
+  it('caps oversized CAH so it cannot starve the critical goal push', () => {
+    const state = {
+      ...buildDefaultState(),
+      expenses: [
+        ...buildDefaultState().expenses,
+        { id: 'cash-at-hand', name: 'CAH', amount: 10000000, currency: 'NGN' as const, frequency: 'monthly' as const, category: 'Pocket cash', priority: 'flexible' as const, workCritical: false },
+      ],
+    };
+
+    const plan = generateAllocation(state, { source: 'Large client payment', amount: 2000000, currency: 'NGN', exchangeRate: 1600, date: '2026-06-14' });
+    const cahItem = plan.items.find((item) => item.destinationName === 'CAH');
+    const goalTotal = plan.items
+      .filter((item) => item.destinationName === 'Move-Out Fund' && item.destinationType === 'goal')
+      .reduce((sum, item) => sum + item.amount, 0);
+
+    assert.equal(cahItem?.amount, 160000);
+    assert.ok(goalTotal > 0, 'Critical goal should still receive funding even when requested CAH is oversized');
+  });
+
+  it('does not treat the old C typo as cash-at-hand shorthand', () => {
+    const state = {
+      ...buildDefaultState(),
+      expenses: [
+        ...buildDefaultState().expenses,
+        { id: 'c-typo', name: 'C', amount: 100000, currency: 'NGN' as const, frequency: 'monthly' as const, category: 'Pocket cash', priority: 'flexible' as const, workCritical: false },
+      ],
+    };
+
+    const plan = generateAllocation(state, { source: 'Client payment', amount: 850000, currency: 'NGN', exchangeRate: 1600, date: '2026-06-14' });
+
+    assert.ok(!plan.items.some((item) => item.destinationName === 'C'));
   });
 
   it('applies an allocation plan to goal and debt progress only once', () => {

@@ -176,13 +176,17 @@ function daysBetween(start: Date, end: Date) { return Math.max(1, Math.ceil((end
 function isCashAtHandExpense(expense: RecurringExpense) {
   const normalizedName = expense.name.trim().toLowerCase();
   const normalizedCategory = expense.category.trim().toLowerCase();
-  return normalizedName === 'c' || normalizedName.includes('cash at hand') || normalizedCategory.includes('cash at hand') || normalizedCategory.includes('liquidity');
+  return normalizedName === 'cah' || normalizedName.includes('cash at hand') || normalizedCategory.includes('cash at hand') || normalizedCategory.includes('liquidity');
 }
 
 function getCashAtHandFundingRate(mode: string) {
   if (mode === 'Survival Mode') return 0.25;
   if (mode === 'Stability Mode') return 0.5;
   return 0.75;
+}
+
+function getCashAtHandIncomeCapRate() {
+  return 0.08;
 }
 
 /**
@@ -202,7 +206,7 @@ function buildExpenseExclusion(expense: RecurringExpense, mode: string, monthlyA
   if (isCashAtHandExpense(expense)) {
     const rate = getCashAtHandFundingRate(mode);
     reason = fundedAmountNgn > 0
-      ? `Partially funded because cash at hand is treated as a realistic emergency/spending window in ${mode}, capped at ${Math.round(rate * 100)}% of the amount you requested.`
+      ? `Partially funded because cash at hand is treated as a realistic emergency/spending window in ${mode}, capped at ${Math.round(rate * 100)}% of the amount you requested and ${Math.round(getCashAtHandIncomeCapRate() * 100)}% of this income.`
       : `Excluded because there was no room left to fund cash at hand after higher-priority obligations in ${mode}.`;
     rules.push(`Cash at hand receives up to ${Math.round(rate * 100)}% of its requested monthly amount in ${mode}.`);
     rules.push('This keeps emergency/church/quick household cash visible without letting it silently overpower debt, savings, or active goals.');
@@ -291,12 +295,13 @@ export function generateAllocation(state: AppState, income: Income): AllocationP
     .forEach((expense) => {
       const rate = getCashAtHandFundingRate(mode);
       const monthlyAmount = getMonthlyExpenseAmount(expense, exchangeRate);
+      const incomeCap = amountNgn * getCashAtHandIncomeCapRate();
       addItem(
         expense.name,
         'buffer',
-        monthlyAmount * rate,
+        Math.min(monthlyAmount * rate, incomeCap),
         'cash-at-hand cap',
-        `Cash at hand gets ${Math.round(rate * 100)}% of your requested amount in ${mode}, so you have emergency/church/quick household cash without breaking the larger plan.`,
+        `Cash at hand gets up to ${Math.round(rate * 100)}% of your requested amount in ${mode}, capped at ${Math.round(getCashAtHandIncomeCapRate() * 100)}% of this income, so you have emergency/church/quick household cash without breaking the larger plan.`,
         expense.id,
       );
     });
