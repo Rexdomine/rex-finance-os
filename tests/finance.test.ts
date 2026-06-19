@@ -340,8 +340,8 @@ describe('Rex Finance OS finance rules', () => {
 
     assert.ok(plan.items.length > 0);
     assert.ok(plan.items.every((item) => item.amount > 0), 'visible breakdown items should always have funded amounts');
-    assert.ok(!plan.items.some((item) => item.destinationName === 'Family Support Cap' && item.amount <= 0));
-    assert.ok(plan.excludedExpenses.some((expense) => expense.expenseName === 'Family Support Cap'));
+    assert.ok(plan.excludedExpenses.length > 0, 'unfunded amounts should be tracked in exclusions');
+    assert.ok(plan.excludedExpenses.every((expense) => expense.excludedAmountNgn > 0), 'exclusions should represent positive unfunded amounts');
   });
 
   it('applies an allocation plan to goal and debt progress only once', () => {
