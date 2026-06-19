@@ -11,6 +11,14 @@ export type Goal = { id: string; name: string; targetAmount: number; currentAmou
 export type Debt = { id: string; name: string; totalAmount: number; remainingAmount: number; currency: Currency; minimumDueAmount: number; dueDate: string; urgency: Urgency; status: DebtStatus; strategy: 'minimum-first' | 'aggressive-payoff' | 'percentage-income' | 'manual'; notes?: string; };
 export type RecurringExpense = { id: string; name: string; amount: number; currency: Currency; frequency: 'weekly' | 'monthly' | 'yearly' | 'one-time'; category: string; priority: ExpensePriority; dueDay?: number; workCritical: boolean; };
 /**
+ * Editable fields for a goal, excluding its stable identity.
+ */
+export type GoalUpdate = Partial<Omit<Goal, 'id' | 'name' | 'currency' | 'strategy'>>;
+/**
+ * Editable fields for a debt, excluding its stable identity.
+ */
+export type DebtUpdate = Partial<Omit<Debt, 'id' | 'name' | 'currency' | 'strategy'>>;
+/**
  * Editable fields for a recurring expense, excluding its stable identity.
  */
 export type RecurringExpenseUpdate = Partial<Omit<RecurringExpense, 'id' | 'name'>>;
@@ -41,6 +49,26 @@ export function getUsdToNgnRate(stateOrSettings?: Pick<AppState, 'exchangeRateSe
   const settings = stateOrSettings && 'exchangeRateSettings' in stateOrSettings ? stateOrSettings.exchangeRateSettings : stateOrSettings;
   const rate = Number(settings?.usdToNgn);
   return Number.isFinite(rate) && rate > 0 ? rate : DEFAULT_USD_TO_NGN_RATE;
+}
+
+/**
+ * Updates a goal by id while preserving immutable state and goal identity.
+ */
+export function updateGoal(state: AppState, goalId: string, updates: GoalUpdate): AppState {
+  return {
+    ...state,
+    goals: state.goals.map((goal) => (goal.id === goalId ? { ...goal, ...updates, id: goal.id } : goal)),
+  };
+}
+
+/**
+ * Updates a debt by id while preserving immutable state and debt identity.
+ */
+export function updateDebt(state: AppState, debtId: string, updates: DebtUpdate): AppState {
+  return {
+    ...state,
+    debts: state.debts.map((debt) => (debt.id === debtId ? { ...debt, ...updates, id: debt.id } : debt)),
+  };
 }
 
 /**
