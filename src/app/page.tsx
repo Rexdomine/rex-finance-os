@@ -15,11 +15,17 @@ import {
   migrateAppState,
   toNgn,
   toUsd,
+  updateDebt,
+  updateGoal,
   updateRecurringExpense,
   type AppState,
   type Currency,
+  type Debt,
+  type DebtStatus,
   type ExpenseDecision,
   type ExpensePriority,
+  type Goal,
+  type GoalStatus,
   type Income,
   type Priority,
   type RecurringExpense,
@@ -39,6 +45,23 @@ type ExpenseEditDraft = {
   category: string;
   priority: ExpensePriority;
   workCritical: boolean;
+};
+
+type GoalEditDraft = {
+  targetAmount: string;
+  currentAmount: string;
+  deadline: string;
+  priority: Priority;
+  status: GoalStatus;
+};
+
+type DebtEditDraft = {
+  totalAmount: string;
+  remainingAmount: string;
+  minimumDueAmount: string;
+  dueDate: string;
+  urgency: Urgency;
+  status: DebtStatus;
 };
 
 /**
@@ -78,8 +101,16 @@ export default function Home() {
   const [expenseDraft, setExpenseDraft] = useState({ name: '', amount: '', currency: 'NGN' as Currency, frequency: 'monthly' as RecurringExpense['frequency'], category: 'Essentials', priority: 'important' as ExpensePriority, workCritical: false });
   const [decisionDraft, setDecisionDraft] = useState({ name: 'Sneakers', amount: '120000', currency: 'NGN' as Currency, category: 'Clothing', exchangeRate: String(getUsdToNgnRate(getDefaultState())) });
   const [expenseDecision, setExpenseDecision] = useState<ExpenseDecision | null>(null);
+  const [managementStatus, setManagementStatus] = useState<string | null>(null);
+  const [managementStatusTone, setManagementStatusTone] = useState<'success' | 'warning'>('success');
   const [expenseStatus, setExpenseStatus] = useState<string | null>(null);
   const [expenseStatusTone, setExpenseStatusTone] = useState<'success' | 'warning'>('success');
+  const [goalToDelete, setGoalToDelete] = useState<Goal | null>(null);
+  const [goalToEdit, setGoalToEdit] = useState<Goal | null>(null);
+  const [goalEditDraft, setGoalEditDraft] = useState<GoalEditDraft | null>(null);
+  const [debtToDelete, setDebtToDelete] = useState<Debt | null>(null);
+  const [debtToEdit, setDebtToEdit] = useState<Debt | null>(null);
+  const [debtEditDraft, setDebtEditDraft] = useState<DebtEditDraft | null>(null);
   const [expenseToDelete, setExpenseToDelete] = useState<RecurringExpense | null>(null);
   const [expenseToEdit, setExpenseToEdit] = useState<RecurringExpense | null>(null);
   const [expenseEditDraft, setExpenseEditDraft] = useState<ExpenseEditDraft | null>(null);
@@ -221,11 +252,148 @@ export default function Home() {
 
   const addDebt = () => {
     if (!debtDraft.name || !debtDraft.totalAmount) return;
+    const totalAmount = Number(debtDraft.totalAmount);
+    const remainingAmount = Number(debtDraft.remainingAmount || debtDraft.totalAmount);
+    const minimumDueAmount = Number(debtDraft.minimumDueAmount || 0);
+
+    if (
+      !Number.isFinite(totalAmount) ||
+      totalAmount <= 0 ||
+      !Number.isFinite(remainingAmount) ||
+      remainingAmount < 0 ||
+      remainingAmount > totalAmount ||
+      !Number.isFinite(minimumDueAmount) ||
+      minimumDueAmount < 0 ||
+      minimumDueAmount > remainingAmount
+    ) {
+      setManagementStatusTone('warning');
+      setManagementStatus('Enter valid debt amounts before adding. Remaining balance cannot exceed total debt, and minimum due cannot exceed remaining balance.');
+      return;
+    }
+
     setState((previous) => ({
       ...previous,
-      debts: [...previous.debts, { id: uid(), name: debtDraft.name, totalAmount: Number(debtDraft.totalAmount), remainingAmount: Number(debtDraft.remainingAmount || debtDraft.totalAmount), currency: 'NGN', minimumDueAmount: Number(debtDraft.minimumDueAmount || 0), dueDate: debtDraft.dueDate || new Date().toISOString().slice(0, 10), urgency: debtDraft.urgency, status: 'active', strategy: 'minimum-first' }],
+      debts: [...previous.debts, { id: uid(), name: debtDraft.name, totalAmount, remainingAmount, currency: 'NGN', minimumDueAmount, dueDate: debtDraft.dueDate || new Date().toISOString().slice(0, 10), urgency: debtDraft.urgency, status: 'active', strategy: 'minimum-first' }],
     }));
+    setManagementStatusTone('success');
+    setManagementStatus(`Debt added: ${debtDraft.name}. Saving to ledger...`);
     setDebtDraft({ name: '', totalAmount: '', remainingAmount: '', minimumDueAmount: '', dueDate: '', urgency: 'normal' });
+  };
+
+  const requestEditGoal = (goal: Goal) => {
+    setGoalToEdit(goal);
+    setGoalEditDraft({
+      targetAmount: String(goal.targetAmount),
+      currentAmount: String(goal.currentAmount),
+      deadline: goal.deadline,
+      priority: goal.priority,
+      status: goal.status,
+    });
+  };
+
+  const cancelEditGoal = () => {
+    setGoalToEdit(null);
+    setGoalEditDraft(null);
+  };
+
+  const confirmEditGoal = () => {
+    if (!goalToEdit || !goalEditDraft) return;
+    const targetAmount = Number(goalEditDraft.targetAmount);
+    const currentAmount = Number(goalEditDraft.currentAmount);
+    if (!Number.isFinite(targetAmount) || targetAmount <= 0 || !Number.isFinite(currentAmount) || currentAmount < 0 || currentAmount > targetAmount) {
+      setManagementStatusTone('warning');
+      setManagementStatus('Enter a valid goal target and current amount before updating. Current amount cannot exceed the target.');
+      return;
+    }
+
+    setState((previous) => updateGoal(previous, goalToEdit.id, {
+      targetAmount,
+      currentAmount,
+      deadline: goalEditDraft.deadline || goalToEdit.deadline,
+      priority: goalEditDraft.priority,
+      status: goalEditDraft.status,
+    }));
+    setManagementStatusTone('success');
+    setManagementStatus(`Goal updated: ${goalToEdit.name} — ${formatMoney(currentAmount)} / ${formatMoney(targetAmount)}. Saving to ledger...`);
+    cancelEditGoal();
+  };
+
+  const requestDeleteGoal = (goal: Goal) => setGoalToDelete(goal);
+  const cancelDeleteGoal = () => setGoalToDelete(null);
+
+  const confirmDeleteGoal = () => {
+    if (!goalToDelete) return;
+    setState((previous) => ({
+      ...previous,
+      goals: previous.goals.filter((goal) => goal.id !== goalToDelete.id),
+    }));
+    setManagementStatusTone('success');
+    setManagementStatus(`Goal deleted: ${goalToDelete.name}. Saving to ledger...`);
+    setGoalToDelete(null);
+  };
+
+  const requestEditDebt = (debt: Debt) => {
+    setDebtToEdit(debt);
+    setDebtEditDraft({
+      totalAmount: String(debt.totalAmount),
+      remainingAmount: String(debt.remainingAmount),
+      minimumDueAmount: String(debt.minimumDueAmount),
+      dueDate: debt.dueDate,
+      urgency: debt.urgency,
+      status: debt.status,
+    });
+  };
+
+  const cancelEditDebt = () => {
+    setDebtToEdit(null);
+    setDebtEditDraft(null);
+  };
+
+  const confirmEditDebt = () => {
+    if (!debtToEdit || !debtEditDraft) return;
+    const totalAmount = Number(debtEditDraft.totalAmount);
+    const remainingAmount = Number(debtEditDraft.remainingAmount);
+    const minimumDueAmount = Number(debtEditDraft.minimumDueAmount);
+    if (
+      !Number.isFinite(totalAmount) ||
+      totalAmount <= 0 ||
+      !Number.isFinite(remainingAmount) ||
+      remainingAmount < 0 ||
+      remainingAmount > totalAmount ||
+      !Number.isFinite(minimumDueAmount) ||
+      minimumDueAmount < 0 ||
+      minimumDueAmount > remainingAmount
+    ) {
+      setManagementStatusTone('warning');
+      setManagementStatus('Enter valid debt amounts before updating. Remaining balance cannot exceed total debt, and minimum due cannot exceed remaining balance.');
+      return;
+    }
+
+    setState((previous) => updateDebt(previous, debtToEdit.id, {
+      totalAmount,
+      remainingAmount,
+      minimumDueAmount,
+      dueDate: debtEditDraft.dueDate || debtToEdit.dueDate,
+      urgency: debtEditDraft.urgency,
+      status: debtEditDraft.status,
+    }));
+    setManagementStatusTone('success');
+    setManagementStatus(`Debt updated: ${debtToEdit.name} — ${formatMoney(remainingAmount)} remaining. Saving to ledger...`);
+    cancelEditDebt();
+  };
+
+  const requestDeleteDebt = (debt: Debt) => setDebtToDelete(debt);
+  const cancelDeleteDebt = () => setDebtToDelete(null);
+
+  const confirmDeleteDebt = () => {
+    if (!debtToDelete) return;
+    setState((previous) => ({
+      ...previous,
+      debts: previous.debts.filter((debt) => debt.id !== debtToDelete.id),
+    }));
+    setManagementStatusTone('success');
+    setManagementStatus(`Debt deleted: ${debtToDelete.name}. Saving to ledger...`);
+    setDebtToDelete(null);
   };
 
   const addExpense = () => {
@@ -591,7 +759,26 @@ export default function Home() {
               <Select label="Priority" value={goalDraft.priority} onChange={(value) => setGoalDraft({ ...goalDraft, priority: value as Priority })} options={['critical', 'high', 'medium', 'low']} />
             </div>
             <button onClick={addGoal} className="mt-4 rounded-xl bg-emerald-400 px-5 py-2 font-bold text-black">Add goal</button>
-            <List items={state.goals.map((goal) => `${goal.name} — ${formatMoney(goal.currentAmount)} / ${formatMoney(goal.targetAmount)} — ${goal.status}`)} />
+            {managementStatus && (
+              <p aria-live="polite" className={`mt-3 rounded-xl border p-3 text-sm font-semibold ${managementStatusTone === 'success' ? 'border-emerald-300/20 bg-emerald-400/10 text-emerald-100' : 'border-amber-300/25 bg-amber-400/10 text-amber-100'}`}>
+                {managementStatusTone === 'success' ? '✅' : '⚠️'} {managementStatus}
+              </p>
+            )}
+            <div className="mt-5 space-y-2">
+              {state.goals.map((goal) => (
+                <div key={goal.id} className="flex flex-col gap-3 rounded-xl bg-white/5 p-3 text-sm text-white/75 sm:flex-row sm:items-center sm:justify-between">
+                  <span>{goal.name} — {formatMoney(goal.currentAmount)} / {formatMoney(goal.targetAmount)} — {goal.deadline} — {goal.priority} — {goal.status}</span>
+                  <div className="flex flex-wrap gap-2 sm:justify-end">
+                    <button onClick={() => requestEditGoal(goal)} className="self-start rounded-xl border border-emerald-300/30 bg-emerald-400/10 px-3 py-2 text-xs font-black text-emerald-100 transition hover:bg-emerald-400/20 sm:self-auto">
+                      Edit goal
+                    </button>
+                    <button onClick={() => requestDeleteGoal(goal)} className="self-start rounded-xl border border-red-300/30 bg-red-400/10 px-3 py-2 text-xs font-black text-red-100 transition hover:bg-red-400/20 sm:self-auto">
+                      Delete goal
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
           </Panel>
         )}
 
@@ -606,7 +793,26 @@ export default function Home() {
               <Select label="Urgency" value={debtDraft.urgency} onChange={(value) => setDebtDraft({ ...debtDraft, urgency: value as Urgency })} options={['urgent', 'normal', 'flexible']} />
             </div>
             <button onClick={addDebt} className="mt-4 rounded-xl bg-emerald-400 px-5 py-2 font-bold text-black">Add debt</button>
-            <List items={state.debts.map((debt) => `${debt.name} — remaining ${formatMoney(debt.remainingAmount)} — min due ${formatMoney(debt.minimumDueAmount)} — ${debt.status}`)} />
+            {managementStatus && (
+              <p aria-live="polite" className={`mt-3 rounded-xl border p-3 text-sm font-semibold ${managementStatusTone === 'success' ? 'border-emerald-300/20 bg-emerald-400/10 text-emerald-100' : 'border-amber-300/25 bg-amber-400/10 text-amber-100'}`}>
+                {managementStatusTone === 'success' ? '✅' : '⚠️'} {managementStatus}
+              </p>
+            )}
+            <div className="mt-5 space-y-2">
+              {state.debts.map((debt) => (
+                <div key={debt.id} className="flex flex-col gap-3 rounded-xl bg-white/5 p-3 text-sm text-white/75 sm:flex-row sm:items-center sm:justify-between">
+                  <span>{debt.name} — remaining {formatMoney(debt.remainingAmount)} / {formatMoney(debt.totalAmount)} — min due {formatMoney(debt.minimumDueAmount)} — {debt.dueDate} — {debt.urgency} — {debt.status}</span>
+                  <div className="flex flex-wrap gap-2 sm:justify-end">
+                    <button onClick={() => requestEditDebt(debt)} className="self-start rounded-xl border border-emerald-300/30 bg-emerald-400/10 px-3 py-2 text-xs font-black text-emerald-100 transition hover:bg-emerald-400/20 sm:self-auto">
+                      Edit debt
+                    </button>
+                    <button onClick={() => requestDeleteDebt(debt)} className="self-start rounded-xl border border-red-300/30 bg-red-400/10 px-3 py-2 text-xs font-black text-red-100 transition hover:bg-red-400/20 sm:self-auto">
+                      Delete debt
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
           </Panel>
         )}
 
@@ -731,6 +937,111 @@ export default function Home() {
             </div>
           </div>
         )}
+        {goalToEdit && goalEditDraft && (
+          <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/70 px-4 py-4 backdrop-blur-sm sm:items-center sm:py-6" role="dialog" aria-modal="true" aria-labelledby="edit-goal-title">
+            <div className="flex max-h-[calc(100dvh-2rem)] w-full max-w-2xl flex-col overflow-hidden rounded-[2rem] border border-emerald-300/30 bg-[#081711] shadow-2xl shadow-black/60 sm:max-h-[calc(100dvh-3rem)]">
+              <div className="shrink-0 border-b border-white/10 bg-gradient-to-br from-emerald-400/20 via-slate-950 to-black p-5 sm:p-6">
+                <p className="text-xs font-black uppercase tracking-[0.35em] text-emerald-200">Manage goal</p>
+                <h3 id="edit-goal-title" className="mt-3 text-2xl font-black text-white">Edit goal</h3>
+                <p className="mt-3 text-sm leading-6 text-white/70">Update {goalToEdit.name} when targets, deadlines, or priority change.</p>
+              </div>
+              <div className="min-h-0 flex-1 space-y-5 overflow-y-auto p-5 sm:p-6">
+                <div className="rounded-2xl bg-white/5 p-4">
+                  <p className="text-xs uppercase tracking-widest text-white/40">Goal being edited</p>
+                  <p className="mt-2 text-xl font-black text-white">{goalToEdit.name}</p>
+                  <p className="mt-1 text-sm text-white/60">Current progress: {formatMoney(goalToEdit.currentAmount)} / {formatMoney(goalToEdit.targetAmount)}</p>
+                </div>
+                <div className="grid gap-4 md:grid-cols-2">
+                  <Input label="Target amount" type="number" value={goalEditDraft.targetAmount} onChange={(value) => setGoalEditDraft({ ...goalEditDraft, targetAmount: value })} />
+                  <Input label="Current amount" type="number" value={goalEditDraft.currentAmount} onChange={(value) => setGoalEditDraft({ ...goalEditDraft, currentAmount: value })} />
+                  <Input label="Deadline" type="date" value={goalEditDraft.deadline} onChange={(value) => setGoalEditDraft({ ...goalEditDraft, deadline: value })} />
+                  <Select label="Priority" value={goalEditDraft.priority} onChange={(value) => setGoalEditDraft({ ...goalEditDraft, priority: value as Priority })} options={['critical', 'high', 'medium', 'low']} />
+                  <Select label="Status" value={goalEditDraft.status} onChange={(value) => setGoalEditDraft({ ...goalEditDraft, status: value as GoalStatus })} options={['active', 'paused', 'completed', 'archived']} />
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <button onClick={cancelEditGoal} className="rounded-2xl border border-white/10 bg-white/10 px-4 py-3 font-black text-white transition hover:bg-white/15">Cancel, keep current goal</button>
+                  <button onClick={confirmEditGoal} className="rounded-2xl bg-emerald-400 px-4 py-3 font-black text-black transition hover:bg-emerald-300">Update this goal</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+        {goalToDelete && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="delete-goal-title">
+            <div className="w-full max-w-lg overflow-hidden rounded-[2rem] border border-red-300/30 bg-[#081711] shadow-2xl shadow-black/60">
+              <div className="border-b border-white/10 bg-gradient-to-br from-red-400/20 via-slate-950 to-emerald-950/40 p-6">
+                <p className="text-xs font-black uppercase tracking-[0.35em] text-red-200">Confirm goal removal</p>
+                <h3 id="delete-goal-title" className="mt-3 text-2xl font-black text-white">Delete this goal?</h3>
+                <p className="mt-3 text-sm leading-6 text-white/70">This removes the goal from active progress tracking and future allocation planning. Income history and debts stay untouched.</p>
+              </div>
+              <div className="space-y-4 p-6">
+                <div className="rounded-2xl bg-white/5 p-4">
+                  <p className="text-xs uppercase tracking-widest text-white/40">Goal to remove</p>
+                  <p className="mt-2 text-xl font-black text-white">{goalToDelete.name}</p>
+                  <p className="mt-1 text-sm text-white/60">{formatMoney(goalToDelete.currentAmount)} / {formatMoney(goalToDelete.targetAmount)} · {goalToDelete.deadline}</p>
+                </div>
+                <p className="rounded-2xl border border-amber-300/20 bg-amber-400/10 p-4 text-sm text-amber-50">Groot safety check: use paused/archived in edit mode if you want to keep the record but hide it from active planning.</p>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <button onClick={cancelDeleteGoal} className="rounded-2xl border border-white/10 bg-white/10 px-4 py-3 font-black text-white transition hover:bg-white/15">Cancel, keep goal</button>
+                  <button onClick={confirmDeleteGoal} className="rounded-2xl bg-red-400 px-4 py-3 font-black text-black transition hover:bg-red-300">Yes, delete goal</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+        {debtToEdit && debtEditDraft && (
+          <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/70 px-4 py-4 backdrop-blur-sm sm:items-center sm:py-6" role="dialog" aria-modal="true" aria-labelledby="edit-debt-title">
+            <div className="flex max-h-[calc(100dvh-2rem)] w-full max-w-2xl flex-col overflow-hidden rounded-[2rem] border border-emerald-300/30 bg-[#081711] shadow-2xl shadow-black/60 sm:max-h-[calc(100dvh-3rem)]">
+              <div className="shrink-0 border-b border-white/10 bg-gradient-to-br from-emerald-400/20 via-slate-950 to-black p-5 sm:p-6">
+                <p className="text-xs font-black uppercase tracking-[0.35em] text-emerald-200">Manage debt</p>
+                <h3 id="edit-debt-title" className="mt-3 text-2xl font-black text-white">Edit debt</h3>
+                <p className="mt-3 text-sm leading-6 text-white/70">Update {debtToEdit.name} when balances, minimum due, or urgency change.</p>
+              </div>
+              <div className="min-h-0 flex-1 space-y-5 overflow-y-auto p-5 sm:p-6">
+                <div className="rounded-2xl bg-white/5 p-4">
+                  <p className="text-xs uppercase tracking-widest text-white/40">Debt being edited</p>
+                  <p className="mt-2 text-xl font-black text-white">{debtToEdit.name}</p>
+                  <p className="mt-1 text-sm text-white/60">Current balance: {formatMoney(debtToEdit.remainingAmount)} / {formatMoney(debtToEdit.totalAmount)}</p>
+                </div>
+                <div className="grid gap-4 md:grid-cols-2">
+                  <Input label="Total" type="number" value={debtEditDraft.totalAmount} onChange={(value) => setDebtEditDraft({ ...debtEditDraft, totalAmount: value })} />
+                  <Input label="Remaining" type="number" value={debtEditDraft.remainingAmount} onChange={(value) => setDebtEditDraft({ ...debtEditDraft, remainingAmount: value })} />
+                  <Input label="Min due" type="number" value={debtEditDraft.minimumDueAmount} onChange={(value) => setDebtEditDraft({ ...debtEditDraft, minimumDueAmount: value })} />
+                  <Input label="Due date" type="date" value={debtEditDraft.dueDate} onChange={(value) => setDebtEditDraft({ ...debtEditDraft, dueDate: value })} />
+                  <Select label="Urgency" value={debtEditDraft.urgency} onChange={(value) => setDebtEditDraft({ ...debtEditDraft, urgency: value as Urgency })} options={['urgent', 'normal', 'flexible']} />
+                  <Select label="Status" value={debtEditDraft.status} onChange={(value) => setDebtEditDraft({ ...debtEditDraft, status: value as DebtStatus })} options={['active', 'paid', 'paused']} />
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <button onClick={cancelEditDebt} className="rounded-2xl border border-white/10 bg-white/10 px-4 py-3 font-black text-white transition hover:bg-white/15">Cancel, keep current debt</button>
+                  <button onClick={confirmEditDebt} className="rounded-2xl bg-emerald-400 px-4 py-3 font-black text-black transition hover:bg-emerald-300">Update this debt</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+        {debtToDelete && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="delete-debt-title">
+            <div className="w-full max-w-lg overflow-hidden rounded-[2rem] border border-red-300/30 bg-[#081711] shadow-2xl shadow-black/60">
+              <div className="border-b border-white/10 bg-gradient-to-br from-red-400/20 via-slate-950 to-emerald-950/40 p-6">
+                <p className="text-xs font-black uppercase tracking-[0.35em] text-red-200">Confirm debt removal</p>
+                <h3 id="delete-debt-title" className="mt-3 text-2xl font-black text-white">Delete this debt?</h3>
+                <p className="mt-3 text-sm leading-6 text-white/70">This removes the debt from payoff tracking and future allocation planning. It will not touch income history, goals, or expenses.</p>
+              </div>
+              <div className="space-y-4 p-6">
+                <div className="rounded-2xl bg-white/5 p-4">
+                  <p className="text-xs uppercase tracking-widest text-white/40">Debt to remove</p>
+                  <p className="mt-2 text-xl font-black text-white">{debtToDelete.name}</p>
+                  <p className="mt-1 text-sm text-white/60">Remaining {formatMoney(debtToDelete.remainingAmount)} · min due {formatMoney(debtToDelete.minimumDueAmount)}</p>
+                </div>
+                <p className="rounded-2xl border border-amber-300/20 bg-amber-400/10 p-4 text-sm text-amber-50">Groot safety check: use paid/paused in edit mode if you want to preserve the record without active payoff planning.</p>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <button onClick={cancelDeleteDebt} className="rounded-2xl border border-white/10 bg-white/10 px-4 py-3 font-black text-white transition hover:bg-white/15">Cancel, keep debt</button>
+                  <button onClick={confirmDeleteDebt} className="rounded-2xl bg-red-400 px-4 py-3 font-black text-black transition hover:bg-red-300">Yes, delete debt</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
         {expenseToEdit && expenseEditDraft && (
           <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/70 px-4 py-4 backdrop-blur-sm sm:items-center sm:py-6" role="dialog" aria-modal="true" aria-labelledby="edit-expense-title">
             <div className="flex max-h-[calc(100dvh-2rem)] w-full max-w-2xl flex-col overflow-hidden rounded-[2rem] border border-emerald-300/30 bg-[#081711] shadow-2xl shadow-black/60 sm:max-h-[calc(100dvh-3rem)]">
@@ -835,11 +1146,4 @@ function Input({ label, value, onChange, type = 'text' }: { label: string; value
  */
 function Select({ label, value, onChange, options }: { label: string; value: string; onChange: (value: string) => void; options: string[] }) {
   return <label className="block"><span className="mb-1 block text-xs font-bold uppercase tracking-widest text-white/40">{label}</span><select value={value} onChange={(event) => onChange(event.target.value)} className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-3 text-white outline-none focus:border-emerald-300">{options.map((option) => <option key={option} value={option}>{option}</option>)}</select></label>;
-}
-
-/**
- * Renders simple text rows for management lists.
- */
-function List({ items }: { items: string[] }) {
-  return <div className="mt-5 space-y-2">{items.map((item) => <div key={item} className="rounded-xl bg-white/5 p-3 text-sm text-white/75">{item}</div>)}</div>;
 }

@@ -9,6 +9,8 @@ import {
   getUsdToNgnRate,
   migrateAppState,
   checkExpenseDecision,
+  updateDebt,
+  updateGoal,
   updateRecurringExpense,
 } from '../src/lib/finance';
 
@@ -78,6 +80,60 @@ describe('Rex Finance OS finance rules', () => {
     assert.equal(updatedFood.workCritical, true);
     assert.equal(state.expenses.find((expense) => expense.id === 'food')?.amount, 120000, 'original state should remain immutable');
     assert.deepEqual(updated.expenses.filter((expense) => expense.id !== 'food'), state.expenses.filter((expense) => expense.id !== 'food'));
+  });
+
+  it('updates an existing goal without changing its identity or other goals', () => {
+    const state = buildDefaultState();
+    const updated = updateGoal(state, 'move-out', {
+      targetAmount: 6500000,
+      currentAmount: 1500000,
+      deadline: '2026-09-30',
+      priority: 'high',
+      status: 'paused',
+    });
+
+    const originalGoal = state.goals.find((goal) => goal.id === 'move-out');
+    const updatedGoal = updated.goals.find((goal) => goal.id === 'move-out');
+
+    assert.ok(originalGoal && updatedGoal);
+    assert.equal(updated.goals.length, state.goals.length);
+    assert.equal(updatedGoal.id, 'move-out');
+    assert.equal(updatedGoal.name, originalGoal.name);
+    assert.equal(updatedGoal.targetAmount, 6500000);
+    assert.equal(updatedGoal.currentAmount, 1500000);
+    assert.equal(updatedGoal.deadline, '2026-09-30');
+    assert.equal(updatedGoal.priority, 'high');
+    assert.equal(updatedGoal.status, 'paused');
+    assert.equal(state.goals.find((goal) => goal.id === 'move-out')?.targetAmount, 6000000, 'original state should remain immutable');
+    assert.deepEqual(updated.goals.filter((goal) => goal.id !== 'move-out'), state.goals.filter((goal) => goal.id !== 'move-out'));
+  });
+
+  it('updates an existing debt without changing its identity or other debts', () => {
+    const state = buildDefaultState();
+    const updated = updateDebt(state, 'bank-debt', {
+      totalAmount: 400000,
+      remainingAmount: 220000,
+      minimumDueAmount: 75000,
+      dueDate: '2026-07-31',
+      urgency: 'normal',
+      status: 'paid',
+    });
+
+    const originalDebt = state.debts.find((debt) => debt.id === 'bank-debt');
+    const updatedDebt = updated.debts.find((debt) => debt.id === 'bank-debt');
+
+    assert.ok(originalDebt && updatedDebt);
+    assert.equal(updated.debts.length, state.debts.length);
+    assert.equal(updatedDebt.id, 'bank-debt');
+    assert.equal(updatedDebt.name, originalDebt.name);
+    assert.equal(updatedDebt.totalAmount, 400000);
+    assert.equal(updatedDebt.remainingAmount, 220000);
+    assert.equal(updatedDebt.minimumDueAmount, 75000);
+    assert.equal(updatedDebt.dueDate, '2026-07-31');
+    assert.equal(updatedDebt.urgency, 'normal');
+    assert.equal(updatedDebt.status, 'paid');
+    assert.equal(state.debts.find((debt) => debt.id === 'bank-debt')?.remainingAmount, 359000, 'original state should remain immutable');
+    assert.deepEqual(updated.debts.filter((debt) => debt.id !== 'bank-debt'), state.debts.filter((debt) => debt.id !== 'bank-debt'));
   });
 
   it('keeps savings and investment line items in income allocation', () => {

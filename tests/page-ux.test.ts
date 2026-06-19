@@ -61,4 +61,28 @@ describe('Rex Finance OS page UX contracts', () => {
     assert.match(pageSource, /overflow-y-auto/);
     assert.match(pageSource, /items-start justify-center overflow-y-auto/);
   });
+
+  it('opens goal and debt edit/delete controls with confirmation dialogs', () => {
+    assert.match(pageSource, /goalToEdit/);
+    assert.match(pageSource, /Edit goal/i);
+    assert.match(pageSource, /Update this goal/i);
+    assert.match(pageSource, /Delete this goal\?/i);
+    assert.match(pageSource, /Cancel, keep goal/i);
+    assert.match(pageSource, /Yes, delete goal/i);
+    assert.match(pageSource, /debtToEdit/);
+    assert.match(pageSource, /Edit debt/i);
+    assert.match(pageSource, /Update this debt/i);
+    assert.match(pageSource, /Delete this debt\?/i);
+    assert.match(pageSource, /Cancel, keep debt/i);
+    assert.match(pageSource, /Yes, delete debt/i);
+  });
+
+  it('guards debt adds and edits against impossible minimum due amounts', () => {
+    const invalidMinimumDueGuards = pageSource.match(/minimumDueAmount\s*>\s*remainingAmount/g) ?? [];
+
+    assert.ok(invalidMinimumDueGuards.length >= 2, 'add and edit debt flows should both reject minimum due amounts above remaining balance');
+    assert.match(pageSource, /Enter valid debt amounts before adding/i);
+    assert.match(pageSource, /Enter valid debt amounts before updating/i);
+    assert.match(pageSource, /minimum due cannot exceed remaining balance/i);
+  });
 });
