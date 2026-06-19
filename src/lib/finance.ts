@@ -10,11 +10,16 @@ export type DecisionVerdict = 'approve' | 'caution' | 'delay' | 'avoid';
 export type Goal = { id: string; name: string; targetAmount: number; currentAmount: number; currency: Currency; deadline: string; priority: Priority; status: GoalStatus; strategy: 'deadline-based' | 'fixed-percentage' | 'fixed-amount' | 'manual'; notes?: string; };
 export type Debt = { id: string; name: string; totalAmount: number; remainingAmount: number; currency: Currency; minimumDueAmount: number; dueDate: string; urgency: Urgency; status: DebtStatus; strategy: 'minimum-first' | 'aggressive-payoff' | 'percentage-income' | 'manual'; notes?: string; };
 export type RecurringExpense = { id: string; name: string; amount: number; currency: Currency; frequency: 'weekly' | 'monthly' | 'yearly' | 'one-time'; category: string; priority: ExpensePriority; dueDay?: number; workCritical: boolean; };
+/**
+ * Editable fields for a recurring expense, excluding its stable identity.
+ */
+export type RecurringExpenseUpdate = Partial<Omit<RecurringExpense, 'id' | 'name'>>;
 export type Income = { source: string; amount: number; currency: Currency; exchangeRate: number; date: string; notes?: string; };
 export type ExchangeRateSource = 'manual' | 'open-er-api';
 export type ExchangeRateSettings = { usdToNgn: number; source: ExchangeRateSource; provider?: string; updatedAt?: string; autoRefresh: boolean; error?: string; };
 export type AllocationItem = { id: string; destinationName: string; destinationType: DestinationType; amount: number; amountUsd?: number; currency: Currency; priority: string; reason: string; };
-export type AllocationPlan = { mode: string; inputAmountNgn: number; inputAmountUsd?: number; exchangeRate?: number; items: AllocationItem[]; warnings: string[]; recommendations: string[]; };
+export type AllocationExclusion = { expenseId: string; expenseName: string; category: string; priority: ExpensePriority; monthlyAmountNgn: number; excludedAmountNgn: number; reason: string; rules: string[]; };
+export type AllocationPlan = { mode: string; inputAmountNgn: number; inputAmountUsd?: number; exchangeRate?: number; items: AllocationItem[]; excludedExpenses: AllocationExclusion[]; warnings: string[]; recommendations: string[]; };
 export type AppState = { goals: Goal[]; debts: Debt[]; expenses: RecurringExpense[]; incomes: Income[]; exchangeRateSettings: ExchangeRateSettings; lastPlan?: AllocationPlan; appliedPlanSignature?: string; };
 export type ExpenseDecisionInput = { name: string; amount: number; currency: Currency; category: string; exchangeRate: number; date: string; };
 export type ExpenseDecision = { verdict: DecisionVerdict; summary: string; amountNgn: number; goalImpactAmount: number; reasons: string[]; recommendations: string[]; };
@@ -58,6 +63,16 @@ export function migrateAppState(stored: Partial<AppState>): AppState {
     expenses: Array.isArray(stored.expenses) ? stored.expenses : defaults.expenses,
     incomes: Array.isArray(stored.incomes) ? stored.incomes : defaults.incomes,
     exchangeRateSettings,
+  };
+}
+
+/**
+ * Updates a recurring expense by id while preserving immutable state and expense identity.
+ */
+export function updateRecurringExpense(state: AppState, expenseId: string, updates: RecurringExpenseUpdate): AppState {
+  return {
+    ...state,
+    expenses: state.expenses.map((expense) => (expense.id === expenseId ? { ...expense, ...updates, id: expense.id } : expense)),
   };
 }
 
@@ -125,7 +140,50 @@ export function getMonthlyExpenseAmount(expense: RecurringExpense, exchangeRate:
   return baseNgn;
 }
 
+/**
+ * Counts whole calendar days between two dates for deadline-based goal pacing.
+ */
 function daysBetween(start: Date, end: Date) { return Math.max(1, Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24))); }
+
+/**
+ * Explains the unfunded portion of a recurring expense after the allocation rules run.
+ */
+function buildExpenseExclusion(expense: RecurringExpense, mode: string, monthlyAmountNgn: number, fundedAmountNgn: number): AllocationExclusion | null {
+  const unfundedAmount = Math.max(0, Math.round(monthlyAmountNgn - fundedAmountNgn));
+  if (unfundedAmount <= 0) return null;
+
+  const rules = [
+    `${mode} controls how much income can go to expenses before debts, savings, investments, and active goals.`,
+    'Must-pay and work-critical expenses are considered first from the expense pool.',
+    'Flexible/pauseable expenses are excluded unless they match an explicit lifestyle or clothing cap rule.',
+  ];
+
+  let reason = `Excluded because ${expense.priority} expenses are not directly funded in ${mode} unless an explicit cap rule includes them.`;
+  if (expense.priority === 'must-pay') {
+    reason = fundedAmountNgn > 0
+      ? 'Partially excluded because the must-pay expense pool was exhausted before the full monthly amount could be funded.'
+      : 'Excluded because the capped must-pay expense pool was exhausted before this expense was reached.';
+  } else if (expense.priority === 'important') {
+    reason = fundedAmountNgn > 0
+      ? 'Partially excluded because important expenses are capped after urgent debts, savings/investments, and critical goals are considered.'
+      : 'Excluded because important expenses are considered only after higher-priority obligations and there was no room under the current allocation constraints.';
+    rules.push('Important expenses are capped at up to 8% of this income per item after higher-priority allocations.');
+  } else if (expense.priority === 'flexible' || expense.priority === 'pauseable') {
+    reason = `Excluded because ${expense.priority} expenses are discretionary in ${mode}; only the built-in lifestyle/clothing cap rules are funded automatically.`;
+    rules.push('Create or rename a planned discretionary cap such as Lifestyle Cap/Clothing Cap, or mark a truly essential bill as must-pay/work-critical, to have it considered automatically.');
+  }
+
+  return {
+    expenseId: expense.id,
+    expenseName: expense.name,
+    category: expense.category,
+    priority: expense.priority,
+    monthlyAmountNgn: Math.round(monthlyAmountNgn),
+    excludedAmountNgn: unfundedAmount,
+    reason,
+    rules,
+  };
+}
 
 /**
  * Appends missing seeded recurring expenses without altering existing expense rows.
@@ -151,15 +209,17 @@ export function generateAllocation(state: AppState, income: Income): AllocationP
   const amountNgn = toNgn(income.amount, income.currency, exchangeRate);
   const inputAmountUsd = toUsd(amountNgn, exchangeRate);
   const items: AllocationItem[] = [];
+  const fundedExpenseAmounts = new Map<string, number>();
   const warnings: string[] = [];
   const recommendations: string[] = [];
   let remaining = amountNgn;
   const activeCriticalGoal = state.goals.filter((goal) => goal.status === 'active' && goal.priority === 'critical' && goal.targetAmount > goal.currentAmount).sort((a, b) => new Date(a.deadline).getTime() - new Date(b.deadline).getTime())[0];
   const mode = amountNgn < 500000 ? 'Survival Mode' : amountNgn < 1500000 ? 'Stability Mode' : 'Move-Out Attack Mode';
-  const addItem = (destinationName: string, destinationType: DestinationType, rawAmount: number, priority: string, reason: string) => {
+  const addItem = (destinationName: string, destinationType: DestinationType, rawAmount: number, priority: string, reason: string, expenseId?: string) => {
     const amount = Math.max(0, Math.min(remaining, Math.round(rawAmount)));
     if (amount <= 0) return;
     items.push({ id: uid(), destinationName, destinationType, amount, amountUsd: toUsd(amount, exchangeRate), currency: 'NGN', priority, reason });
+    if (expenseId) fundedExpenseAmounts.set(expenseId, (fundedExpenseAmounts.get(expenseId) ?? 0) + amount);
     remaining -= amount;
   };
   const mustPayExpenses = state.expenses.filter((expense) => expense.priority === 'must-pay');
@@ -169,7 +229,7 @@ export function generateAllocation(state: AppState, income: Income): AllocationP
   mustPayExpenses.forEach((expense) => {
     if (expensePool <= 0) return;
     const allocation = Math.min(getMonthlyExpenseAmount(expense, exchangeRate), expensePool);
-    addItem(expense.name, 'expense', allocation, expense.workCritical ? 'work-critical' : 'must-pay', expense.workCritical ? 'Keeps work and income engine running.' : 'Covers core survival spending.');
+    addItem(expense.name, 'expense', allocation, expense.workCritical ? 'work-critical' : 'must-pay', expense.workCritical ? 'Keeps work and income engine running.' : 'Covers core survival spending.', expense.id);
     expensePool -= allocation;
   });
   state.debts.filter((debt) => debt.status === 'active' && debt.remainingAmount > 0 && debt.urgency === 'urgent').forEach((debt) => {
@@ -181,11 +241,11 @@ export function generateAllocation(state: AppState, income: Income): AllocationP
   addItem('Investment Seed', 'investment', Math.max(amountNgn * (mode === 'Survival Mode' ? 0.03 : 0.05), amountNgn < 100000 ? 1000 : 0), 'wealth-building', 'Small consistent investing builds the habit before wealth scales.');
   const lifestyleExpense = state.expenses.find((expense) => expense.id === 'lifestyle');
   if (lifestyleExpense) {
-    addItem(lifestyleExpense.name, 'lifestyle', Math.min(getMonthlyExpenseAmount(lifestyleExpense, exchangeRate), mode === 'Survival Mode' ? amountNgn * 0.04 : amountNgn * 0.08), 'honest living cap', 'Planned guilt-free outing money so the budget stays realistic, not punishing.');
+    addItem(lifestyleExpense.name, 'lifestyle', Math.min(getMonthlyExpenseAmount(lifestyleExpense, exchangeRate), mode === 'Survival Mode' ? amountNgn * 0.04 : amountNgn * 0.08), 'honest living cap', 'Planned guilt-free outing money so the budget stays realistic, not punishing.', lifestyleExpense.id);
   }
   const clothingExpense = state.expenses.find((expense) => expense.id === 'clothing');
   if (clothingExpense) {
-    addItem(clothingExpense.name, 'expense', Math.min(getMonthlyExpenseAmount(clothingExpense, exchangeRate), mode === 'Survival Mode' ? amountNgn * 0.02 : amountNgn * 0.04), 'honest clothing cap', 'Allows at least one planned clothing item without turning it into untracked impulse spending.');
+    addItem(clothingExpense.name, 'expense', Math.min(getMonthlyExpenseAmount(clothingExpense, exchangeRate), mode === 'Survival Mode' ? amountNgn * 0.02 : amountNgn * 0.04), 'honest clothing cap', 'Allows at least one planned clothing item without turning it into untracked impulse spending.', clothingExpense.id);
   }
   if (activeCriticalGoal) {
     const goalRemaining = activeCriticalGoal.targetAmount - activeCriticalGoal.currentAmount;
@@ -194,7 +254,7 @@ export function generateAllocation(state: AppState, income: Income): AllocationP
     const goalRate = mode === 'Survival Mode' ? 0.1 : mode === 'Stability Mode' ? 0.3 : 0.65;
     addItem(activeCriticalGoal.name, 'goal', Math.min(goalRemaining, Math.max(amountNgn * goalRate, mode === 'Move-Out Attack Mode' ? Math.min(weeklyNeed, remaining) : 0)), 'critical goal', `Deadline-based push. Current weekly target is about ${formatMoney(weeklyNeed)}.`);
   }
-  state.expenses.filter((expense) => expense.priority === 'important').forEach((expense) => addItem(expense.name, 'expense', Math.min(getMonthlyExpenseAmount(expense, exchangeRate), amountNgn * 0.08), 'important cap', 'Useful support category, but capped while critical goals are active.'));
+  state.expenses.filter((expense) => expense.priority === 'important').forEach((expense) => addItem(expense.name, 'expense', Math.min(getMonthlyExpenseAmount(expense, exchangeRate), amountNgn * 0.08), 'important cap', 'Useful support category, but capped while critical goals are active.', expense.id));
   if (remaining > 0) addItem(activeCriticalGoal?.name ?? 'Buffer', activeCriticalGoal ? 'goal' : 'buffer', remaining, activeCriticalGoal ? 'extra goal push' : 'buffer', activeCriticalGoal ? 'Extra unassigned cash should accelerate the critical goal.' : 'Keep unassigned cash as buffer.');
   if (amountNgn < monthlyMustPayNgn) warnings.push(`This income is below your estimated must-pay monthly expenses of ${formatMoney(monthlyMustPayNgn)}.`);
   if (activeCriticalGoal) {
@@ -202,7 +262,10 @@ export function generateAllocation(state: AppState, income: Income): AllocationP
     recommendations.push(`${activeCriticalGoal.name} would have ${formatMoney(Math.max(0, activeCriticalGoal.targetAmount - activeCriticalGoal.currentAmount - added))} left after this allocation.`);
   }
   recommendations.push('Review the split before spending. The plan is advice; you can still manually adjust it.');
-  return { mode, inputAmountNgn: amountNgn, inputAmountUsd, exchangeRate, items, warnings, recommendations };
+  const excludedExpenses = state.expenses
+    .map((expense) => buildExpenseExclusion(expense, mode, getMonthlyExpenseAmount(expense, exchangeRate), fundedExpenseAmounts.get(expense.id) ?? 0))
+    .filter((expense): expense is AllocationExclusion => Boolean(expense));
+  return { mode, inputAmountNgn: amountNgn, inputAmountUsd, exchangeRate, items, excludedExpenses, warnings, recommendations };
 }
 
 /**

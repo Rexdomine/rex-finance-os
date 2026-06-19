@@ -9,6 +9,7 @@ import {
   getUsdToNgnRate,
   migrateAppState,
   checkExpenseDecision,
+  updateRecurringExpense,
 } from '../src/lib/finance';
 
 describe('Rex Finance OS finance rules', () => {
@@ -53,6 +54,30 @@ describe('Rex Finance OS finance rules', () => {
     assert.equal(vps.amount, 96);
     assert.equal(vps.currency, 'USD');
     assert.equal(getMonthlyExpenseAmount(vps, 1600), 12800);
+  });
+
+  it('updates an existing recurring expense without changing its identity or other expenses', () => {
+    const state = buildDefaultState();
+    const updated = updateRecurringExpense(state, 'food', {
+      amount: 180000,
+      category: 'Essentials - inflation adjusted',
+      priority: 'important',
+      workCritical: true,
+    });
+
+    const originalFood = state.expenses.find((expense) => expense.id === 'food');
+    const updatedFood = updated.expenses.find((expense) => expense.id === 'food');
+
+    assert.ok(originalFood && updatedFood);
+    assert.equal(updated.expenses.length, state.expenses.length);
+    assert.equal(updatedFood.id, 'food');
+    assert.equal(updatedFood.name, originalFood.name);
+    assert.equal(updatedFood.amount, 180000);
+    assert.equal(updatedFood.category, 'Essentials - inflation adjusted');
+    assert.equal(updatedFood.priority, 'important');
+    assert.equal(updatedFood.workCritical, true);
+    assert.equal(state.expenses.find((expense) => expense.id === 'food')?.amount, 120000, 'original state should remain immutable');
+    assert.deepEqual(updated.expenses.filter((expense) => expense.id !== 'food'), state.expenses.filter((expense) => expense.id !== 'food'));
   });
 
   it('keeps savings and investment line items in income allocation', () => {
@@ -104,6 +129,39 @@ describe('Rex Finance OS finance rules', () => {
 
     assert.ok(plan.items.some((item) => item.destinationName === 'Lifestyle Cap' && item.amount > 0), 'Lifestyle Cap should be funded');
     assert.ok(plan.items.some((item) => item.destinationName === 'Clothing Cap' && item.amount > 0), 'Clothing Cap should be funded');
+  });
+
+  it('explains newly added expenses that were excluded from an allocation run', () => {
+    const state = {
+      ...buildDefaultState(),
+      expenses: [
+        ...buildDefaultState().expenses,
+        { id: 'cash-at-hand', name: 'Cash at Hand', amount: 100000, currency: 'NGN' as const, frequency: 'monthly' as const, category: 'Liquidity', priority: 'flexible' as const, workCritical: false },
+        { id: 'self-care', name: 'Self Care', amount: 80000, currency: 'NGN' as const, frequency: 'monthly' as const, category: 'Wellbeing', priority: 'flexible' as const, workCritical: false },
+      ],
+    };
+
+    const plan = generateAllocation(state, {
+      source: 'Client payment',
+      amount: 850000,
+      currency: 'NGN',
+      exchangeRate: 1600,
+      date: '2026-06-14',
+    });
+
+    assert.ok(!plan.items.some((item) => item.destinationName === 'Cash at Hand'));
+    assert.ok(!plan.items.some((item) => item.destinationName === 'Self Care'));
+
+    const cashExclusion = plan.excludedExpenses.find((expense) => expense.expenseName === 'Cash at Hand');
+    const selfCareExclusion = plan.excludedExpenses.find((expense) => expense.expenseName === 'Self Care');
+
+    assert.ok(cashExclusion);
+    assert.ok(selfCareExclusion);
+    assert.match(cashExclusion.reason, /flexible/i);
+    assert.ok(cashExclusion.rules.some((rule) => /Survival Mode|must-pay|explicit lifestyle/i.test(rule)));
+    assert.equal(cashExclusion.monthlyAmountNgn, 100000);
+    assert.equal(cashExclusion.excludedAmountNgn, 100000);
+    assert.equal(selfCareExclusion.category, 'Wellbeing');
   });
 
   it('applies an allocation plan to goal and debt progress only once', () => {

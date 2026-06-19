@@ -37,4 +37,22 @@ describe('Rex Finance OS page UX contracts', () => {
     assert.match(pageSource, /exchangeRateSettings/);
     assert.doesNotMatch(pageSource, /Includes USD tools @ ₦1,600\/\$/);
   });
+
+  it('renders allocation transparency for excluded expenses and rule reasons', () => {
+    assert.match(pageSource, /Excluded from this allocation/i);
+    assert.match(pageSource, /excludedExpenses/);
+    assert.match(pageSource, /Rules\/constraints/i);
+    assert.match(pageSource, /reason each expense was excluded/i);
+    assert.match(pageSource, /excludedAmountNgn/);
+  });
+
+  it('opens an expense edit modal with controls for amount, category, priority, and work-critical status', () => {
+    assert.match(pageSource, /expenseToEdit/);
+    assert.match(pageSource, /Edit expense/i);
+    assert.match(pageSource, /Update this expense/i);
+    assert.match(pageSource, /Amount/i);
+    assert.match(pageSource, /Category/i);
+    assert.match(pageSource, /Priority/i);
+    assert.match(pageSource, /Work-critical/i);
+  });
 });
