@@ -290,11 +290,12 @@ export function generateAllocation(state: AppState, income: Income): AllocationP
       .reduce((sum, expense) => sum + getMonthlyExpenseAmount(expense, exchangeRate) * getCashAtHandFundingRate(mode), 0),
   );
   const addItem = (destinationName: string, destinationType: DestinationType, rawAmount: number, priority: string, reason: string, expenseId?: string) => {
-    const amount = Math.max(0, Math.min(remaining, Math.round(rawAmount)));
-    if (amount <= 0) return;
+    const amount = Math.floor(Math.max(0, Math.min(remaining, rawAmount)));
+    if (amount <= 0) return 0;
     items.push({ id: uid(), destinationName, destinationType, amount, amountUsd: toUsd(amount, exchangeRate), currency: 'NGN', priority, reason });
     if (expenseId) fundedExpenseAmounts.set(expenseId, (fundedExpenseAmounts.get(expenseId) ?? 0) + amount);
     remaining -= amount;
+    return amount;
   };
   const mustPayExpenses = state.expenses.filter((expense) => expense.priority === 'must-pay');
   const monthlyMustPayNgn = mustPayExpenses.reduce((sum, expense) => sum + getMonthlyExpenseAmount(expense, exchangeRate), 0);
@@ -338,7 +339,7 @@ export function generateAllocation(state: AppState, income: Income): AllocationP
       const monthlyAmount = getMonthlyExpenseAmount(expense, exchangeRate);
       const remainingCashAtHandCap = Math.max(0, cashAtHandBudgetCap - cashAtHandAllocated);
       const allocation = Math.min(monthlyAmount * rate, remainingCashAtHandCap);
-      addItem(
+      const fundedAmount = addItem(
         expense.name,
         'buffer',
         allocation,
@@ -346,7 +347,7 @@ export function generateAllocation(state: AppState, income: Income): AllocationP
         `Cash at hand gets up to ${Math.round(rate * 100)}% of your requested amount in ${mode}, capped at ${Math.round(getCashAtHandIncomeCapRate() * 100)}% of this income, so you have emergency/church/quick household cash without breaking the larger plan.`,
         expense.id,
       );
-      cashAtHandAllocated += Math.max(0, Math.round(allocation));
+      cashAtHandAllocated += fundedAmount;
     });
   state.expenses.filter((expense) => expense.priority === 'important').forEach((expense) => addItem(expense.name, 'expense', Math.min(getMonthlyExpenseAmount(expense, exchangeRate), amountNgn * 0.08), 'important cap', 'Useful support category, but capped while critical goals are active.', expense.id));
   if (remaining > 0) addItem(activeCriticalGoal?.name ?? 'Buffer', activeCriticalGoal ? 'goal' : 'buffer', remaining, activeCriticalGoal ? 'extra goal push' : 'buffer', activeCriticalGoal ? 'Extra unassigned cash should accelerate the critical goal.' : 'Keep unassigned cash as buffer.');

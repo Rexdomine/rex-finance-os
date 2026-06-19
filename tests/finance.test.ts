@@ -340,8 +340,28 @@ describe('Rex Finance OS finance rules', () => {
 
     assert.ok(plan.items.length > 0);
     assert.ok(plan.items.every((item) => item.amount > 0), 'visible breakdown items should always have funded amounts');
+    assert.ok(plan.items.every((item) => Math.round(item.amount) > 0), 'visible breakdown items should never display as ₦0 after currency rounding');
     assert.ok(plan.excludedExpenses.length > 0, 'unfunded amounts should be tracked in exclusions');
     assert.ok(plan.excludedExpenses.every((expense) => expense.excludedAmountNgn > 0), 'exclusions should represent positive unfunded amounts');
+  });
+
+  it('keeps fractional allocation totals from exceeding the actual income received', () => {
+    [0.4, 0.5, 0.6, 1.4, 1.5].forEach((amount) => {
+      const plan = generateAllocation({ ...buildDefaultState(), goals: [], debts: [], expenses: [] }, {
+        source: 'Fractional test payment',
+        amount,
+        currency: 'NGN',
+        exchangeRate: 1600,
+        date: '2026-06-14',
+      });
+      const allocatedTotal = plan.items.reduce((sum, item) => sum + item.amount, 0);
+
+      assert.ok(
+        allocatedTotal <= plan.inputAmountNgn,
+        `allocated ${allocatedTotal} should not exceed income ${plan.inputAmountNgn}`,
+      );
+      assert.ok(plan.items.every((item) => Math.round(item.amount) > 0), 'visible items should still display as positive amounts');
+    });
   });
 
   it('applies an allocation plan to goal and debt progress only once', () => {

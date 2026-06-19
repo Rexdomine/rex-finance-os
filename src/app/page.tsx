@@ -617,7 +617,7 @@ export default function Home() {
                       <p className="mt-1 text-sm text-emerald-100/75">USD equivalent: {formatMoney(state.lastPlan.inputAmountUsd ?? toUsd(state.lastPlan.inputAmountNgn, state.lastPlan.exchangeRate ?? income.exchangeRate), 'USD')}</p>
                     </div>
                     <div className="max-h-[28rem] space-y-3 overflow-auto pr-1">
-                      {state.lastPlan.items.map((item) => (
+                      {state.lastPlan.items.filter((item) => Math.round(item.amount) > 0).map((item) => (
                         <div key={item.id} className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
                           <div className="flex items-start justify-between gap-3">
                             <div>
