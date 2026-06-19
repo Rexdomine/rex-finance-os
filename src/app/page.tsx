@@ -413,6 +413,38 @@ export default function Home() {
                         </div>
                       ))}
                     </div>
+                    {(state.lastPlan.excludedExpenses ?? []).length > 0 && (
+                      <div className="rounded-3xl border border-amber-300/20 bg-amber-400/10 p-4">
+                        <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+                          <div>
+                            <p className="text-xs font-black uppercase tracking-[0.3em] text-amber-200/70">Allocation transparency</p>
+                            <h3 className="mt-1 text-xl font-black text-amber-50">Excluded from this allocation</h3>
+                          </div>
+                          <p className="text-sm text-amber-100/70">Shows the reason each expense was excluded.</p>
+                        </div>
+                        <div className="mt-4 space-y-3">
+                          {(state.lastPlan.excludedExpenses ?? []).map((expense) => (
+                            <div key={expense.expenseId} className="rounded-2xl bg-black/25 p-4">
+                              <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                                <div>
+                                  <p className="font-bold text-white">{expense.expenseName}</p>
+                                  <p className="text-xs uppercase tracking-widest text-white/40">{expense.category} · {expense.priority}</p>
+                                </div>
+                                <p className="font-black text-amber-200">Excluded {formatMoney(expense.excludedAmountNgn ?? expense.monthlyAmountNgn)}</p>
+                                <p className="text-xs text-white/40">Monthly amount: {formatMoney(expense.monthlyAmountNgn)}</p>
+                              </div>
+                              <p className="mt-3 text-sm text-amber-50/80">{expense.reason}</p>
+                              <div className="mt-3">
+                                <p className="text-xs font-black uppercase tracking-[0.25em] text-white/35">Rules/constraints</p>
+                                <ul className="mt-2 space-y-2 text-sm text-white/60">
+                                  {expense.rules.map((rule) => <li key={rule} className="rounded-xl bg-white/[0.04] p-2">{rule}</li>)}
+                                </ul>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                     {state.lastPlan.warnings.map((warning) => <p key={warning} className="rounded-xl bg-amber-400/10 p-3 text-sm text-amber-100">⚠ {warning}</p>)}
                     {state.lastPlan.recommendations.map((recommendation) => <p key={recommendation} className="rounded-xl bg-blue-400/10 p-3 text-sm text-blue-100">💡 {recommendation}</p>)}
                     {applyStatus && <p className="rounded-xl bg-emerald-400/10 p-3 text-sm font-semibold text-emerald-100">✅ {applyStatus}</p>}

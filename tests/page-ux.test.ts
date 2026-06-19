@@ -37,4 +37,12 @@ describe('Rex Finance OS page UX contracts', () => {
     assert.match(pageSource, /exchangeRateSettings/);
     assert.doesNotMatch(pageSource, /Includes USD tools @ ₦1,600\/\$/);
   });
+
+  it('renders allocation transparency for excluded expenses and rule reasons', () => {
+    assert.match(pageSource, /Excluded from this allocation/i);
+    assert.match(pageSource, /excludedExpenses/);
+    assert.match(pageSource, /Rules\/constraints/i);
+    assert.match(pageSource, /reason each expense was excluded/i);
+    assert.match(pageSource, /excludedAmountNgn/);
+  });
 });
