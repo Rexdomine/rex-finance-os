@@ -159,6 +159,22 @@ export function toUsd(amountNgn: number, exchangeRate: number) {
 }
 
 /**
+ * Returns the latest allocation headline USD equivalent using the active site rate,
+ * not the rate or USD snapshot saved when the plan was originally generated.
+ */
+export function getAllocationPlanInputUsdEquivalent(plan: AllocationPlan, activeExchangeRate: number) {
+  return toUsd(plan.inputAmountNgn, getUsdToNgnRate({ usdToNgn: activeExchangeRate, source: 'manual', autoRefresh: true }));
+}
+
+/**
+ * Returns an allocation line USD equivalent using the active site rate so older
+ * persisted plans stay aligned when the default or managed dollar value changes.
+ */
+export function getAllocationItemUsdEquivalent(item: Pick<AllocationItem, 'amount'>, activeExchangeRate: number) {
+  return toUsd(item.amount, getUsdToNgnRate({ usdToNgn: activeExchangeRate, source: 'manual', autoRefresh: true }));
+}
+
+/**
  * Normalizes recurring expenses into a monthly NGN planning amount.
  */
 export function getMonthlyExpenseAmount(expense: RecurringExpense, exchangeRate: number) {

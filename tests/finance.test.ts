@@ -5,6 +5,8 @@ import {
   buildDefaultState,
   deleteAllocationPlan,
   generateAllocation,
+  getAllocationItemUsdEquivalent,
+  getAllocationPlanInputUsdEquivalent,
   getMonthlyExpenseAmount,
   getUsdToNgnRate,
   migrateAppState,
@@ -171,6 +173,23 @@ describe('Rex Finance OS finance rules', () => {
     assert.ok(openAi, 'OpenAI Max should be part of the split');
     assert.equal(openAi.amount, 160000);
     assert.equal(openAi.amountUsd, 100);
+  });
+
+  it('keeps the latest allocation USD equivalent tied to the active site exchange rate', () => {
+    const oldPlan = generateAllocation(buildDefaultState(), {
+      source: 'Old imported client payment',
+      amount: 1400,
+      currency: 'USD',
+      exchangeRate: 1360.816743,
+      date: '2026-06-14',
+    });
+    const activeRate = 1600;
+    const openAi = oldPlan.items.find((item) => item.destinationName === 'OpenAI Max');
+
+    assert.ok(openAi);
+    assert.equal(oldPlan.inputAmountNgn, 1905143.4402);
+    assert.equal(getAllocationPlanInputUsdEquivalent(oldPlan, activeRate), oldPlan.inputAmountNgn / activeRate);
+    assert.equal(getAllocationItemUsdEquivalent(openAi, activeRate), openAi.amount / activeRate);
   });
 
   it('includes honest lifestyle and clothing buckets before the move-out push on larger income', () => {

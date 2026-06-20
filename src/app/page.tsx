@@ -8,13 +8,14 @@ import {
   deleteAllocationPlan,
   formatMoney,
   generateAllocation,
+  getAllocationItemUsdEquivalent,
+  getAllocationPlanInputUsdEquivalent,
   getUsdToNgnRate,
   getAllocationPlanProgressTotals,
   getAllocationPlanSignature,
   getMonthlyExpenseAmount,
   migrateAppState,
   toNgn,
-  toUsd,
   updateDebt,
   updateGoal,
   updateRecurringExpense,
@@ -614,7 +615,7 @@ export default function Home() {
                     <div className="rounded-2xl bg-emerald-400/10 p-4">
                       <p className="text-sm text-emerald-200">{state.lastPlan.mode}</p>
                       <p className="text-2xl font-black">{formatMoney(state.lastPlan.inputAmountNgn)}</p>
-                      <p className="mt-1 text-sm text-emerald-100/75">USD equivalent: {formatMoney(state.lastPlan.inputAmountUsd ?? toUsd(state.lastPlan.inputAmountNgn, state.lastPlan.exchangeRate ?? income.exchangeRate), 'USD')}</p>
+                      <p className="mt-1 text-sm text-emerald-100/75">USD equivalent @ ₦{formatRate(usdToNgnRate)}/$: {formatMoney(getAllocationPlanInputUsdEquivalent(state.lastPlan, usdToNgnRate), 'USD')}</p>
                     </div>
                     <div className="max-h-[28rem] space-y-3 overflow-auto pr-1">
                       {state.lastPlan.items.filter((item) => Math.round(item.amount) > 0).map((item) => (
@@ -627,7 +628,7 @@ export default function Home() {
                             </div>
                             <div className="text-right">
                               <p className="whitespace-nowrap font-black text-emerald-300">{formatMoney(item.amount)}</p>
-                              <p className="mt-1 whitespace-nowrap text-xs font-semibold text-white/50">≈ {formatMoney(item.amountUsd ?? toUsd(item.amount, state.lastPlan?.exchangeRate ?? income.exchangeRate), 'USD')}</p>
+                              <p className="mt-1 whitespace-nowrap text-xs font-semibold text-white/50">≈ {formatMoney(getAllocationItemUsdEquivalent(item, usdToNgnRate), 'USD')}</p>
                             </div>
                           </div>
                         </div>

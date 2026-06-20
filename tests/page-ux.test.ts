@@ -24,10 +24,10 @@ describe('Rex Finance OS page UX contracts', () => {
     assert.doesNotMatch(pageSource, /expenses\.splice/);
   });
 
-  it('shows USD equivalents beside Naira allocation amounts', () => {
-    assert.match(pageSource, /inputAmountUsd/);
-    assert.match(pageSource, /amountUsd/);
-    assert.match(pageSource, /USD equivalent/i);
+  it('shows USD equivalents beside Naira allocation amounts using the active site rate', () => {
+    assert.match(pageSource, /getAllocationPlanInputUsdEquivalent\(state\.lastPlan, usdToNgnRate\)/);
+    assert.match(pageSource, /getAllocationItemUsdEquivalent\(item, usdToNgnRate\)/);
+    assert.match(pageSource, /USD equivalent @ ₦\{formatRate\(usdToNgnRate\)\}\/\$/i);
   });
 
   it('exposes a settings section for managed USD to NGN rates instead of hardcoded dashboard copy', () => {
